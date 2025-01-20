@@ -1,6 +1,9 @@
 const builtin = @import("builtin");
 const limine = @import("limine");
 const std = @import("std");
+const serial = @import("drivers/serial.zig");
+const interrupts = @import("interrupts/idt.zig");
+const kmalloc = @import("memory/allocator.zig");
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -29,12 +32,24 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 }
 
 export fn _start() callconv(.C) noreturn {
+    serial.println("Kernel starting...", .{});
+
+    kmalloc.init();
+    serial.println("Initializing interrupts...", .{});
+    interrupts.init();
+    _ = interrupts.enable_interrupts();
+
+    serial.println("Testing breakpoint interrupt...", .{});
+    asm volatile ("int3");
+
     if (!base_revision.is_supported()) {
+        serial.println("Unsupported Limine protocol version", .{});
         done();
     }
 
     if (smp_request.response) |smp_response| {
         const cpu_count = smp_response.cpu_count;
+        serial.println("Found {d} cores", .{cpu_count});
 
         for (0..cpu_count) |i| {
             const cpu_info = smp_response.cpus()[i];
@@ -49,6 +64,7 @@ export fn _start() callconv(.C) noreturn {
 
     if (framebuffer_request.response) |framebuffer_response| {
         if (framebuffer_response.framebuffer_count < 1) {
+            serial.println("No framebuffer available", .{});
             done();
         }
 
@@ -61,6 +77,4 @@ export fn _start() callconv(.C) noreturn {
     }
 
     smp_entry(smp_request.response.?.cpus()[0]);
-
-    done();
 }
