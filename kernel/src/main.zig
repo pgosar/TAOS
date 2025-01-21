@@ -2,7 +2,7 @@ const builtin = @import("builtin");
 const limine = @import("limine");
 const std = @import("std");
 const serial = @import("drivers/serial.zig");
-const interrupts = @import("interrupts/idt.zig");
+const idt = @import("interrupts/idt.zig");
 const kmalloc = @import("memory/allocator.zig");
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
@@ -36,8 +36,9 @@ export fn _start() callconv(.C) noreturn {
 
     kmalloc.init();
     serial.println("Initializing interrupts...", .{});
-    interrupts.init();
-    _ = interrupts.enable_interrupts();
+    idt.init();
+
+    idt.enable_interrupts();
 
     serial.println("Testing breakpoint interrupt...", .{});
     asm volatile ("int3");

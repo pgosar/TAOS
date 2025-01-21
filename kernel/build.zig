@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .code_model = .kernel,
     });
+    kernel.addAssemblyFile(b.path("src/interrupts/interrupts.s"));
 
     // Disable LTO to preserve Limine requests
     kernel.want_lto = false;

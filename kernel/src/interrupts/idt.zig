@@ -7,6 +7,27 @@ const TRAP_GATE: u8 = 0x8F; // P=1, DPL=0, Type=0xF
 
 // CPU state pushed by interrupt
 const InterruptFrame = packed struct {
+    // Additional registers saved by our stub
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rbp: u64,
+    rdi: u64,
+    rsi: u64,
+    rdx: u64,
+    rcx: u64,
+    rbx: u64,
+    rax: u64,
+
+    // Interrupt number and error code
+    interrupt_number: u64,
+    error_code: u64,
+
     // Pushed by CPU automatically
     rip: u64,
     cs: u64,
@@ -15,33 +36,24 @@ const InterruptFrame = packed struct {
     ss: u64,
 };
 
-// CPU state with error code
-const InterruptFrameWithError = packed struct {
-    error_code: u64,
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    rsp: u64,
-    ss: u64,
-};
+// Define handler type
+const HandlerFn = *const fn (*InterruptFrame) void;
 
-// Define handler types
-const InterruptHandler = *const fn (*InterruptFrame) callconv(.Interrupt) void;
-const InterruptHandlerWithError = *const fn (*InterruptFrameWithError) callconv(.Interrupt) void;
+const IDT_ENTRIES: usize = 256;
 
-// IDT Entry Structure (16 bytes)
+// IDT Entry Structure
 const IdtEntry = packed struct {
-    offset_low: u16, // Lower 16 bits of handler address
-    segment_selector: u16, // Code segment selector
-    ist: u3, // Interrupt Stack Table offset
-    reserved0: u5 = 0, // Reserved, must be 0
-    gate_type: u4, // Gate type (0xE for interrupt, 0xF for trap)
-    reserved1: u1 = 0, // Reserved, must be 0
-    dpl: u2, // Descriptor Privilege Level
-    present: u1, // Present bit
-    offset_mid: u16, // Middle 16 bits of handler address
-    offset_high: u32, // Upper 32 bits of handler address
-    reserved2: u32 = 0, // Reserved, must be 0
+    offset_low: u16,
+    segment_selector: u16,
+    ist: u3,
+    reserved0: u5 = 0,
+    gate_type: u4,
+    reserved1: u1 = 0,
+    dpl: u2,
+    present: u1,
+    offset_mid: u16,
+    offset_high: u32,
+    reserved2: u32 = 0,
 
     pub fn set_offset(self: *IdtEntry, offset: u64) void {
         self.offset_low = @truncate(offset & 0xFFFF);
@@ -61,73 +73,61 @@ const Idtr = packed struct {
     base: u64,
 };
 
-const pushes_error = [32]bool{
-    false, // 0: Divide by zero
-    false, // 1: Debug
-    false, // 2: NMI
-    false, // 3: Breakpoint
-    false, // 4: Overflow
-    false, // 5: Bound range exceeded
-    false, // 6: Invalid opcode
-    false, // 7: Device not available
-    true, // 8: Double fault
-    false, // 9: Coprocessor segment overrun (reserved)
-    true, // 10: Invalid TSS
-    true, // 11: Segment not present
-    true, // 12: Stack segment fault
-    true, // 13: General protection fault
-    true, // 14: Page fault
-    false, // 15: Reserved
-    false, // 16: x87 FPU error
-    true, // 17: Alignment check
-    false, // 18: Machine check
-    false, // 19: SIMD floating point
-    false, // 20: Virtualization
-    true, // 21: Control protection
-    false, // 22: Reserved
-    false, // 23: Reserved
-    false, // 24: Reserved
-    false, // 25: Reserved
-    false, // 26: Reserved
-    false, // 27: Reserved
-    false, // 28: Reserved
-    false, // 29: Reserved
-    true, // 30: Security exception
-    false, // 31: Reserved
-};
-
-const IDT_ENTRIES: usize = 256;
-
 var idt_entries: [IDT_ENTRIES]IdtEntry = undefined;
 var idtr: Idtr = undefined;
+var handlers: [IDT_ENTRIES]?HandlerFn = undefined;
+
+// Array of assembly stubs
+extern const interrupt_stubs: [256]u64;
+
+// Common handler for all interrupts
+export fn common_interrupt_handler(frame: *InterruptFrame) callconv(.C) void {
+    const vector = frame.interrupt_number;
+
+    if (handlers[vector]) |handler| {
+        handler(frame);
+    } else {
+        serial.println("Unhandled interrupt {d} at RIP: 0x{X}", .{ vector, frame.rip });
+        serial.println("Error code: 0x{X}", .{frame.error_code});
+        hang();
+    }
+}
 
 pub fn init() void {
-    serial.println("Initializing IDT...", .{});
-
+    @memset(&handlers, null);
     @memset(std.mem.asBytes(&idt_entries), 0);
 
-    set_gate(0, exception_divide_by_zero, INTERRUPT_GATE); // Divide by zero
-    set_gate(1, exception_debug, INTERRUPT_GATE); // Debug
-    set_gate(2, exception_non_maskable, INTERRUPT_GATE); // NMI
-    set_gate(3, exception_hw_breakpoint, INTERRUPT_GATE); // Breakpoint
-    // ... set up other exception handlers ...
+    // Set up all gates to point to their respective stubs
+    for (0..IDT_ENTRIES) |i| {
+        set_gate(@intCast(i));
+    }
+
+    // Register default handlers
+    register_handler(0, exception_divide_by_zero);
+    register_handler(1, exception_debug);
+    register_handler(2, exception_non_maskable);
+    register_handler(3, exception_breakpoint);
+    register_handler(14, page_fault_handler);
 
     // Set up the IDTR
     idtr.limit = @sizeOf(@TypeOf(idt_entries)) - 1;
     idtr.base = @intFromPtr(&idt_entries);
 
-    // Load the IDTR
     load_idt();
 
     serial.println("IDT initialized", .{});
 }
 
-fn set_gate(n: u8, handler: InterruptHandler, flags: u8) void {
+fn set_gate(n: u8) void {
     var entry = &idt_entries[n];
     entry.segment_selector = 0x28; // Kernel code segment
     entry.ist = 0; // Don't use IST
-    entry.set_flags(flags);
-    entry.set_offset(@intFromPtr(handler));
+    entry.set_flags(INTERRUPT_GATE);
+    entry.set_offset(interrupt_stubs[n]);
+}
+
+pub fn register_handler(vector: u8, handler: HandlerFn) void {
+    handlers[vector] = handler;
 }
 
 fn load_idt() void {
@@ -137,23 +137,40 @@ fn load_idt() void {
     );
 }
 
-fn exception_divide_by_zero(frame: *InterruptFrame) callconv(.Interrupt) void {
+// Example handlers
+fn exception_divide_by_zero(frame: *InterruptFrame) void {
     serial.println("Divide by zero exception at RIP: 0x{X}", .{frame.rip});
     hang();
 }
 
-fn exception_debug(frame: *InterruptFrame) callconv(.Interrupt) void {
+fn exception_debug(frame: *InterruptFrame) void {
     serial.println("Debug exception at RIP: 0x{X}", .{frame.rip});
     hang();
 }
 
-fn exception_non_maskable(frame: *InterruptFrame) callconv(.Interrupt) void {
+fn exception_non_maskable(frame: *InterruptFrame) void {
     serial.println("Non-maskable interrupt at RIP: 0x{X}", .{frame.rip});
     hang();
 }
 
-fn exception_hw_breakpoint(frame: *InterruptFrame) callconv(.Interrupt) void {
+fn exception_breakpoint(frame: *InterruptFrame) void {
     serial.println("Breakpoint exception at RIP: 0x{X}", .{frame.rip});
+}
+
+fn page_fault_handler(frame: *InterruptFrame) void {
+    serial.println("Page fault at RIP: 0x{X}", .{frame.rip});
+    serial.println("Error code: 0x{X}", .{frame.error_code});
+    // Error code bits for page fault:
+    // bit 0: Present (0=non-present page, 1=page protection)
+    // bit 1: Write (0=read, 1=write)
+    // bit 2: User (0=supervisor, 1=user)
+    // bit 3: Reserved write (0=not a reserved bit, 1=reserved bit violation)
+    // bit 4: Instruction Fetch (0=data access, 1=instruction fetch)
+    const present = frame.error_code & 1;
+    const write = (frame.error_code >> 1) & 1;
+    const user = (frame.error_code >> 2) & 1;
+    serial.println("  Present: {}, Write: {}, User: {}", .{ present, write, user });
+    hang();
 }
 
 fn hang() noreturn {
