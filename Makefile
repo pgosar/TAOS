@@ -10,6 +10,7 @@ QEMU_MEMORY := -m 2G
 QEMU_CPU := -smp 2
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
+QEMU_GDB := -s -S
 
 # Common QEMU flags groups
 QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
@@ -60,6 +61,46 @@ run-bios-debug: run-bios
 .PHONY: run-hdd-debug
 run-hdd-debug: MODE=debug
 run-hdd-debug: run-hdd
+
+.PHONY: gdb-gui
+gdb-gui: MODE=debug
+gdb-gui: ovmf $(IMAGE_NAME).iso
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+
+.PHONY: gdb-term
+gdb-term: MODE=debug
+gdb-term: ovmf $(IMAGE_NAME).iso
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+
+.PHONY: gdb-hdd-gui
+gdb-hdd-gui: MODE=debug
+gdb-hdd-gui: ovmf $(IMAGE_NAME).hdd
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+
+.PHONY: gdb-hdd-term
+gdb-hdd-term: MODE=debug
+gdb-hdd-term: ovmf $(IMAGE_NAME).hdd
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+
+.PHONY: gdb-bios-gui
+gdb-bios-gui: MODE=debug
+gdb-bios-gui: $(IMAGE_NAME).iso
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+
+.PHONY: gdb-bios-term
+gdb-bios-term: MODE=debug
+gdb-bios-term: $(IMAGE_NAME).iso
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+
+.PHONY: gdb-hdd-bios-gui
+gdb-hdd-bios-gui: MODE=debug
+gdb-hdd-bios-gui: $(IMAGE_NAME).hdd
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+
+.PHONY: gdb-hdd-bios-term
+gdb-hdd-bios-term: MODE=debug
+gdb-hdd-bios-term: $(IMAGE_NAME).hdd
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
 
 .PHONY: run-gui-release
 run-gui-release: MODE=release
