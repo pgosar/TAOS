@@ -120,7 +120,7 @@ pub fn init() void {
 
 fn set_gate(n: u8) void {
     var entry = &idt_entries[n];
-    entry.segment_selector = 0x28; // Kernel code segment
+    entry.segment_selector = 0x08; // Kernel code segment
     entry.ist = 0; // Don't use IST
     entry.set_flags(INTERRUPT_GATE);
     entry.set_offset(interrupt_stubs[n]);
@@ -130,7 +130,7 @@ pub fn register_handler(vector: u8, handler: HandlerFn) void {
     handlers[vector] = handler;
 }
 
-fn load_idt() void {
+pub fn load_idt() void {
     asm volatile ("lidt (%[idtr])"
         :
         : [idtr] "r" (&idtr),
