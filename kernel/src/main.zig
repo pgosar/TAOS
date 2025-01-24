@@ -9,6 +9,7 @@ const lib = @import("lib.zig");
 
 extern fn load_tss(u32) void;
 extern fn reload_segments() void;
+const vm = @import("memory/vm.zig");
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -42,7 +43,6 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 }
 
 export fn _start() callconv(.C) noreturn {
-
     serial.println("Kernel starting...", .{});
     if (smp_request.response) |smp_response| {
         const cpu_count = smp_response.cpu_count;
@@ -51,8 +51,7 @@ export fn _start() callconv(.C) noreturn {
         }
         serial.println("Initializing GDT and TSS...", .{});
         gdt.init(0);
-    }
-    else {
+    } else {
         serial.println("Cannot request how many cores machine has.", .{});
         unreachable;
     }
@@ -61,6 +60,9 @@ export fn _start() callconv(.C) noreturn {
 
     serial.println("Initializing interrupts...", .{});
     idt.init();
+
+    serial.println("Initializing vm...", .{});
+    vm.init();
 
     idt.enable_interrupts();
 

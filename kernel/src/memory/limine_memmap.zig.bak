@@ -1,0 +1,14 @@
+const std = @import("std");
+const limine = @import("limine");
+const serial = @import("../drivers/serial.zig");
+
+pub export var memmap_request: limine.MemoryMapRequest = .{};
+
+pub fn init() limine.MemoryMapRequest {
+    // get memory map from limine
+    const memmap = memmap_request.response orelse {
+        @panic("No memory map provided by bootloader");
+    };
+
+    return memmap;
+}
