@@ -10,6 +10,7 @@ const lib = @import("lib.zig");
 extern fn load_tss(u32) void;
 extern fn reload_segments() void;
 const vm = @import("memory/vm.zig");
+const frame_allocator = @import("memory/frame_allocator.zig");
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -62,7 +63,7 @@ export fn _start() callconv(.C) noreturn {
     idt.init();
 
     serial.println("Initializing vm...", .{});
-    vm.init();
+    frame_allocator.init();
 
     idt.enable_interrupts();
 
