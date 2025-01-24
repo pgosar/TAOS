@@ -11,9 +11,10 @@ QEMU_CPU := -smp 2
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
 QEMU_GDB := -s -S
+QEMU_DEBUG := -d cpu_reset,guest_errors -D qemu.log
 
 # Common QEMU flags groups
-QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
+QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO) $(QEMU_DEBUG)
 QEMU_UEFI := $(QEMU_COMMON) -bios ovmf-x86_64/OVMF.fd
 QEMU_BIOS := $(QEMU_COMMON)
 

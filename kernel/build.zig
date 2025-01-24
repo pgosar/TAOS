@@ -28,6 +28,8 @@ pub fn build(b: *std.Build) void {
         .code_model = .kernel,
     });
     kernel.addAssemblyFile(b.path("src/interrupts/interrupts.s"));
+    kernel.addAssemblyFile(b.path("./src/interrupts/gdt.s"));
+
 
     // Disable LTO to preserve Limine requests
     kernel.want_lto = false;

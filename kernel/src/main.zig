@@ -3,7 +3,12 @@ const limine = @import("limine");
 const std = @import("std");
 const serial = @import("drivers/serial.zig");
 const idt = @import("interrupts/idt.zig");
+const gdt = @import("interrupts/gdt.zig");
 const kmalloc = @import("memory/allocator.zig");
+const lib = @import("lib.zig");
+
+extern fn load_tss(u32) void;
+extern fn reload_segments() void;
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -24,6 +29,15 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 
     // If this is not the BSP (Bootstrap Processor), just halt
     if (info.lapic_id != smp_request.response.?.bsp_lapic_id) {
+        // const tss_ptr: u32 = lib.TSS_START + (2 * @sizeOf(gdt.GdtEntry) * info.processor_id);
+        gdt.init(2);
+        idt.init();
+        serial.println("HELLO", .{});
+        idt.enable_interrupts();
+        asm volatile ("int3");
+        // load_tss(0x28);
+        // reload_segments();
+        // serial.println("cpu {d} has tss start 0x{X}", .{info.processor_id, tss_ptr});
         done();
     }
 
@@ -32,9 +46,24 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 }
 
 export fn _start() callconv(.C) noreturn {
+
     serial.println("Kernel starting...", .{});
+    if (smp_request.response) |smp_response| {
+        const cpu_count = smp_response.cpu_count;
+        if (cpu_count > lib.MAX_NUM_CORES) {
+            serial.println("Machine has more cores than supported. OS supports up to {} cores.", .{lib.MAX_NUM_CORES});
+        }
+        serial.println("Initializing GDT and TSS...", .{});
+        gdt.init(cpu_count);
+    }
+    else {
+        serial.println("Cannot request how many cores machine has.", .{});
+        unreachable;
+    }
 
     kmalloc.init();
+
+
     serial.println("Initializing interrupts...", .{});
     idt.init();
 
