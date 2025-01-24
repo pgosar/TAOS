@@ -59,7 +59,6 @@ export fn _start() callconv(.C) noreturn {
 
     kmalloc.init();
 
-
     serial.println("Initializing interrupts...", .{});
     idt.init();
 

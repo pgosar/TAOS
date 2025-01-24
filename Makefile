@@ -93,10 +93,12 @@ gdb-bios-term: MODE=debug
 gdb-bios-term: $(IMAGE_NAME).iso
 	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB) $(QEMU_DEBUG)
 
+
 .PHONY: gdb-hdd-bios-gui
 gdb-hdd-bios-gui: MODE=debug
 gdb-hdd-bios-gui: $(IMAGE_NAME).hdd
 	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB) $(QEMU_DEBUG)
+
 
 .PHONY: gdb-hdd-bios-term
 gdb-hdd-bios-term: MODE=debug
