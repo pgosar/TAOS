@@ -17,6 +17,8 @@ pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
 
 var booted_cpus: u32 = 0;
 
+const MAX_NUM_CORES: u32 = 16;
+
 inline fn done() noreturn {
     while (true) {
         asm volatile ("hlt");
@@ -29,15 +31,9 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 
     // If this is not the BSP (Bootstrap Processor), just halt
     if (info.lapic_id != smp_request.response.?.bsp_lapic_id) {
-        // const tss_ptr: u32 = lib.TSS_START + (2 * @sizeOf(gdt.GdtEntry) * info.processor_id);
-        gdt.init(2);
+        gdt.init(info.processor_id);
         idt.init();
-        serial.println("HELLO", .{});
         idt.enable_interrupts();
-        asm volatile ("int3");
-        // load_tss(0x28);
-        // reload_segments();
-        // serial.println("cpu {d} has tss start 0x{X}", .{info.processor_id, tss_ptr});
         done();
     }
 
@@ -54,7 +50,7 @@ export fn _start() callconv(.C) noreturn {
             serial.println("Machine has more cores than supported. OS supports up to {} cores.", .{lib.MAX_NUM_CORES});
         }
         serial.println("Initializing GDT and TSS...", .{});
-        gdt.init(cpu_count);
+        gdt.init(0);
     }
     else {
         serial.println("Cannot request how many cores machine has.", .{});

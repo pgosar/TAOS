@@ -14,7 +14,7 @@ QEMU_GDB := -s -S
 QEMU_DEBUG := -d cpu_reset,guest_errors -D qemu.log
 
 # Common QEMU flags groups
-QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO) $(QEMU_DEBUG)
+QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
 QEMU_UEFI := $(QEMU_COMMON) -bios ovmf-x86_64/OVMF.fd
 QEMU_BIOS := $(QEMU_COMMON)
 
@@ -66,42 +66,42 @@ run-hdd-debug: run-hdd
 .PHONY: gdb-gui
 gdb-gui: MODE=debug
 gdb-gui: ovmf $(IMAGE_NAME).iso
-	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-term
 gdb-term: MODE=debug
 gdb-term: ovmf $(IMAGE_NAME).iso
-	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-hdd-gui
 gdb-hdd-gui: MODE=debug
 gdb-hdd-gui: ovmf $(IMAGE_NAME).hdd
-	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-hdd-term
 gdb-hdd-term: MODE=debug
 gdb-hdd-term: ovmf $(IMAGE_NAME).hdd
-	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-bios-gui
 gdb-bios-gui: MODE=debug
 gdb-bios-gui: $(IMAGE_NAME).iso
-	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-bios-term
 gdb-bios-term: MODE=debug
 gdb-bios-term: $(IMAGE_NAME).iso
-	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-hdd-bios-gui
 gdb-hdd-bios-gui: MODE=debug
 gdb-hdd-bios-gui: $(IMAGE_NAME).hdd
-	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: gdb-hdd-bios-term
 gdb-hdd-bios-term: MODE=debug
 gdb-hdd-bios-term: $(IMAGE_NAME).hdd
-	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
+	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM) $(QEMU_GDB) $(QEMU_DEBUG)
 
 .PHONY: run-gui-release
 run-gui-release: MODE=release
