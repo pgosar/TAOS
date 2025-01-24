@@ -46,8 +46,8 @@ export fn _start() callconv(.C) noreturn {
     serial.println("Kernel starting...", .{});
     if (smp_request.response) |smp_response| {
         const cpu_count = smp_response.cpu_count;
-        if (cpu_count > lib.MAX_NUM_CORES) {
-            serial.println("Machine has more cores than supported. OS supports up to {} cores.", .{lib.MAX_NUM_CORES});
+        if (cpu_count > MAX_NUM_CORES) {
+            serial.println("Machine has more cores than supported. OS supports up to {} cores.", .{MAX_NUM_CORES});
         }
         serial.println("Initializing GDT and TSS...", .{});
         gdt.init(0);

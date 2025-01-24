@@ -106,7 +106,7 @@ pub fn init(cpu_num: u32) void {
 
     gdt_ptr.limit = (@sizeOf(GdtEntry) * GDT_ENTRIES) - 1;
     load_gdt(gdt_ptr);
-    load_tss(lib.TSS_START + (cpu_num * (2 * @sizeOf(GdtEntry))));
+    load_tss(TSS_START + (cpu_num * (2 * @sizeOf(GdtEntry))));
     reload_segments();
 }
 
