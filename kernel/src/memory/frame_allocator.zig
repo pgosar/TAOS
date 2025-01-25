@@ -8,10 +8,22 @@ const allocator = @import("./allocator.zig");
 //
 
 extern var _kernel_end: u8;
+extern var _kernel_start: u8;
 
-fn getKernelEndAddress() usize {
-    return @intFromPtr(&_kernel_end);
-}
+pub export var hhdm_request: limine.HhdmRequest = .{};
+pub export var executable_address_request: limine.KernelAddressRequest = .{};
+
+const max_kernel_size: u64 = 0x8000000;
+
+// from top vmem address, we subtract space for mapping (physical memory size), we also subtract space for the kernel (max_kernel_size)
+
+const FrameAllocator = packed struct {
+    physical_usable_memory_start: u64,
+    physical_memory_size: u64,
+    // top vmem address - physical memory size (for mapping) - kernel size
+    virtual_kernel_space_start: u64,
+    bitmap: [4096]u64,
+};
 
 pub fn init() void {
     // get memory map from limine
@@ -28,74 +40,20 @@ pub fn init() void {
             usable_physmem_size += entry.length;
         }
     }
+    const HHDM_BASE: u64 = @intFromPtr(&_kernel_end);
+    const kernel_start: u64 = @intFromPtr(&_kernel_start);
+    const kernel_size: u64 = HHDM_BASE - kernel_start;
+    serial.println("Kernel start is {X}, kernel end is {X}, kernel size is {X}", .{ kernel_start, HHDM_BASE, kernel_size });
+d
+    const hhdm = hhdm_request.response orelse {
+        @panic("HHDM Failed");
+    };
 
-    serial.println("The physical memory size is {}", .{usable_physmem_size});
+    serial.println("The HHDM offset by Limine is 0x{X}", .{hhdm.offset});
 
-    serial.println("The kernel ends at {X}", .{getKernelEndAddress()});
+    const kernel_address = executable_address_request.response orelse {
+        @panic("Could not get kernel address");
+    };
+
+    serial.println("The kernel is at VA: {X} and PA: {X}", .{ kernel_address.virtual_base, kernel_address.physical_base });
 }
-
-// Initialize the physical frame allocator
-// pub fn init_physical_allocator(memory_map_start: usize, memory_map_end: usize) void {
-//
-//     // get memory map from limine
-//     const memmap = allocator.memmap_request.response orelse {
-//         @panic("No memory map provided by bootloader");
-//     };
-//
-//     // Find the size of physmem that we care about
-//     // var usable_physmem: ?*const limine.MemoryMapEntry = null;
-//     var usable_physmem_size: u64 = 0;
-//
-//     for (memmap.entries()) |entry| {
-//         if (entry.kind == .usable) {
-//             serial.println("The base size is {}", .{entry.base});
-//             usable_physmem_size += entry.length;
-//         }
-//     }
-//
-//     serial.println("The physical memory size is {}", .{usable_physmem_size});
-//
-
-//
-// std.debug.print("Initializing physical frame allocator...\n", .{});
-//
-// // Example: Assume usable memory starts right after the kernel
-// memory_start = memory_map_start;
-// const usable_memory_size = memory_map_end - memory_map_start;
-//
-// // Calculate total frames
-// total_frames = usable_memory_size / PAGE_SIZE;
-//
-// // Clear the bitmap
-// std.mem.set(u8, &bitmap, 0);
-// }
-
-// Allocate a free frame
-// pub fn alloc_frame() ?usize {
-//     for (bitmap) |byte, i| {
-//         if (byte != 0xFF) { // Check if there are free frames in this byte
-//             for (0..8) |bit| {
-//                 if ((byte & (1 << bit)) == 0) { // Free frame found
-//                     bitmap[i] |= (1 << bit); // Mark frame as allocated
-//                     const frame_index = i * 8 + bit;
-//                     if (frame_index >= total_frames) {
-//                         return null; // Out of frames
-//                     }
-//                     return memory_start + frame_index * PAGE_SIZE;
-//                 }
-//             }
-//         }
-//     }
-//     return null; // No free frames
-// }
-
-// Free a previously allocated frame
-// pub fn free_frame(frame_addr: usize) void {
-//     const frame_index = (frame_addr - memory_start) / PAGE_SIZE;
-//     const byte_index = frame_index / 8;
-//     const bit_index = frame_index % 8;
-//
-//     if (frame_index < total_frames) {
-//         bitmap[byte_index] &= ~(1 << bit_index); // Mark frame as free
-//     }
-// }
