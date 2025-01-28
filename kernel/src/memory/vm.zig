@@ -52,6 +52,7 @@ pub fn init() void {
     var usable_physmem_size: u64 = 0;
 
     for (memmap.entries()) |entry| {
+        serial.println("Entry: {}, {}", .{ entry.type, entry.length });
         if (entry.kind == .usable) {
             usable_physmem = entry;
             usable_physmem_size += entry.length;
