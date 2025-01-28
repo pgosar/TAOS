@@ -3,7 +3,7 @@ const limine = @import("limine");
 const serial = @import("../drivers/serial.zig");
 const allocator = @import("./allocator.zig");
 const lib = @import("../lib.zig");
-const bitmap = @import("./bitmap.zig");
+const bitmap = @import("../lib/bitmap.zig");
 
 // const PAGE_SIZE = 4096;
 // const BITMAP_SIZE = MAX_FRAMES / 8; // One bit per frame
@@ -69,14 +69,28 @@ pub fn init() void {
 
     const FrameBitmap = bitmap.Bitmap(null, u64);
 
-    var buffer: [4096]u8 = undefined;
-    var fixed_alloc = std.heap.FixedBufferAllocator.init(&buffer);
+    const buffer: *[4096]u8 = @ptrFromInt(kernel_end);
+    var fixed_alloc = std.heap.FixedBufferAllocator.init(buffer);
     const my_alloc = fixed_alloc.allocator();
 
-    const frame_bitmap = FrameBitmap.init(5, my_alloc) catch |err| {
+    var frame_bitmap = FrameBitmap.init(5023, my_alloc) catch |err| {
         serial.println("Test bitmap error: {}", .{err});
         @panic("Could not init TestBitmap");
     };
 
-    _ = frame_bitmap;
+    // testing: set first bit in bitmap to 1 such that findFirstFree returns 1
+    frame_bitmap.setEntry(0, 1) catch |err| switch (err) {
+        bitmap.BitmapError.OutOfBounds => @panic("Index out of bounds"),
+        else => @panic("Unknown error occurred"),
+    };
+    const first_free_index = frame_bitmap.findFirstFree() catch |err| switch (err) {
+        bitmap.BitmapError.BitmapFull => @panic("Bitmap is full!"),
+        else => @panic("Unknowkn error occurred"),
+    };
+
+    serial.println("First free index {}", .{first_free_index});
+
+    // TODO: I think the frame allocator should be placed after
+    // the kernel in physical memory (using HHDM offset)
+    // instead of where we are allocating right now
 }
