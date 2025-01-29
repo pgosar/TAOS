@@ -1,5 +1,6 @@
 // A general purpose bitmap object that can be statically or dynamically allocated
 const std = @import("std");
+const lib = @import("../lib.zig");
 const Allocator = std.mem.Allocator;
 
 pub const BitmapError = error{
@@ -68,27 +69,28 @@ pub fn Bitmap(comptime total_entries: ?u64, comptime BitmapType: type) type {
         }
 
         // sets a specific bit
-        pub fn setEntry(self: *Self, i: usize, value: u1) BitmapError!void {
+        pub fn setEntry(self: *Self, i: usize, value: lib.BitMapAllocationStatus) BitmapError!void {
             if (i > self.total_entries) {
                 return BitmapError.OutOfBounds;
             }
 
             // set the specific bit in the BitmapType we load
             const full = offsetInIndex(i);
-            if (value == 1)
-                self.bitmap[i / ENTRIES_IN_ONE_VALUE] |= full
-            else if (value == 0)
+            if (value == lib.BitMapAllocationStatus.ALLOCATED) {
+                self.bitmap[i / ENTRIES_IN_ONE_VALUE] |= full;
+                self.free_entries -= 1;
+            } else if (value == lib.BitMapAllocationStatus.FREE) {
                 self.bitmap[i / ENTRIES_IN_ONE_VALUE] &= ~full;
-
-            self.free_entries -= 1;
+                self.free_entries += 1;
+            }
         }
 
-        pub fn isFree(self: *Self, i: usize) BitmapError!bool {
+        pub fn isSet(self: *Self, i: usize) BitmapError!bool {
             if (i > self.total_entries) {
                 return BitmapError.OutOfBounds;
             }
 
-            return self.bitmap[i / ENTRIES_IN_ONE_VALUE] & offsetInIndex(i) == 0;
+            return self.bitmap[i / ENTRIES_IN_ONE_VALUE] & offsetInIndex(i) == 1;
         }
 
         // debug funtion to get the size of the bitmap by walking through the entire thing
@@ -104,6 +106,13 @@ pub fn Bitmap(comptime total_entries: ?u64, comptime BitmapType: type) type {
             }
 
             return self.index_last_accessed;
+        }
+
+        pub fn setContiguous(self: *Self, i: usize, size: usize, value: lib.BitMapAllocationStatus) BitmapError!void {
+            // find the first free contiguous entries and set them to one
+            for (0..size) |j| {
+                try setEntry(self, (i + j), value);
+            }
         }
     };
 }
