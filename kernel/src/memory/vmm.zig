@@ -2,6 +2,7 @@ const std = @import("std");
 const limine = @import("limine");
 const serial = @import("../drivers/serial.zig");
 const allocator = @import("./allocator.zig");
+const debugPrint = @import("../util.zig").debugPrint;
 
 const PAGE_PRESENT = 0x1;
 const PAGE_WRITE = 0x1;
@@ -59,5 +60,5 @@ pub fn init() void {
         }
     }
 
-    serial.println("The physical memory size is {}", .{usable_physmem_size});
+    debugPrint("The physical memory size is {}", .{usable_physmem_size});
 }
