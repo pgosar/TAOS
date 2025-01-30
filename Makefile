@@ -1,7 +1,7 @@
 # Nuke built-in rules and variables.
 override MAKEFLAGS += -rR
 
-override IMAGE_NAME := template-x86_64
+override IMAGE_NAME := taos
 
 # QEMU configuration
 QEMU := qemu-system-x86_64

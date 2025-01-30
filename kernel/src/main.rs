@@ -7,6 +7,7 @@ use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::serial_println;
 use x86_64::instructions::{hlt, interrupts};
+use taos::interrupts::idt;
 
 #[used]
 #[link_section = ".requests"]
@@ -36,6 +37,8 @@ extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     serial_println!("Booting on BSP...");
+    idt::init_idt(0);
+    x86_64::instructions::interrupts::int3();
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
