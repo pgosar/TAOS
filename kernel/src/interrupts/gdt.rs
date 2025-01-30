@@ -1,3 +1,7 @@
+// Will remove after getting context switching
+// Right now user code/data is not used
+#![allow(dead_code)]
+
 use lazy_static::lazy_static;
 use x86_64::instructions::segmentation::{Segment, CS, DS, SS};
 use x86_64::instructions::tables::load_tss;
@@ -6,9 +10,8 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::PrivilegeLevel;
 use x86_64::VirtAddr;
 
-pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
-const MAX_CORES: usize = 2;
-const STACK_SIZE: usize = 4096 * 4;
+use crate::constants::MAX_CORES;
+use crate::constants::gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE};
 
 const BASE_ENTRIES: usize = 5; // Null + kernel code/data + user code/data
 const TSS_ENTRIES_PER_CORE: usize = 2; // Each TSS is 16 bytes (2 entries) in long mode
@@ -16,13 +19,13 @@ const GDT_ENTRIES: usize = BASE_ENTRIES + TSS_ENTRIES_PER_CORE * MAX_CORES;
 
 lazy_static! {
     static ref TSSS: [TaskStateSegment; MAX_CORES] = {
-        static mut STACKS: [[u8; STACK_SIZE]; MAX_CORES] = [[0; STACK_SIZE]; MAX_CORES];
+        static mut STACKS: [[u8; IST_STACK_SIZE]; MAX_CORES] = [[0; IST_STACK_SIZE]; MAX_CORES];
         let mut tsss = [TaskStateSegment::new(); MAX_CORES];
 
         for (i, tss) in tsss.iter_mut().enumerate() {
             unsafe {
                 let stack_start = VirtAddr::from_ptr(&STACKS[i]);
-                let stack_end = stack_start + STACK_SIZE as u64;
+                let stack_end = stack_start + IST_STACK_SIZE as u64;
 
                 tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = stack_end;
             }

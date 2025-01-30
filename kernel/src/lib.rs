@@ -1,6 +1,39 @@
 #![feature(abi_x86_interrupt)]
 #![no_std]
-mod devices;
+
+use x86_64::instructions::hlt;
+
+pub mod constants;
+pub mod devices;
 pub mod interrupts;
 
-pub use devices::*;
+pub use devices::serial;
+
+pub mod prelude {
+    pub use crate::serial_print;
+    pub use crate::serial_println;
+    pub use crate::debug_print;
+    pub use crate::debug_println;
+}
+
+#[macro_export]
+macro_rules! debug_print {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        crate::serial_print!($($arg)*);
+    }
+}
+
+#[macro_export]
+macro_rules! debug_println {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        crate::serial_println!($($arg)*);
+    }
+}
+
+pub fn idle_loop() -> ! {
+    loop {
+        hlt();
+    }
+}

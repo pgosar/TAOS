@@ -1,7 +1,8 @@
 use lazy_static::lazy_static;
+use x86_64::instructions::interrupts;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
-use crate::serial_println;
+use crate::prelude::*;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -18,6 +19,43 @@ lazy_static! {
 
 pub fn init_idt(_cpu_id: u32) {
     IDT.load();
+}
+
+pub fn enable() {
+    interrupts::enable();
+}
+
+pub fn disable() {
+    interrupts::disable();
+}
+
+pub fn without_interrupts<F, R>(f: F) -> R 
+where
+    F: FnOnce() -> R 
+{
+    interrupts::without_interrupts(f)
+}
+
+pub fn are_enabled() -> bool {
+    interrupts::are_enabled()
+}
+
+pub fn with_interrupts<F, R>(f: F) -> R 
+where
+    F: FnOnce() -> R 
+{
+    let initially_enabled = are_enabled();
+    if !initially_enabled {
+        enable();
+    }
+
+    let result = f();
+
+    if !initially_enabled {
+        disable();
+    }
+
+    result
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {

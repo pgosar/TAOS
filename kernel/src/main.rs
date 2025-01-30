@@ -6,8 +6,7 @@ use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::interrupts::{gdt, idt};
-use taos::serial_println;
-use x86_64::instructions::{hlt, interrupts};
+use taos::{idle_loop, serial_println};
 
 #[used]
 #[link_section = ".requests"]
@@ -72,7 +71,7 @@ extern "C" fn kmain() -> ! {
     serial_println!("All CPUs initialized");
 
     serial_println!("BSP entering idle loop");
-    hcf();
+    idle_loop();
 }
 
 #[no_mangle]
@@ -87,18 +86,11 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     }
 
     serial_println!("AP {} entering idle loop", cpu.id);
-    hcf();
+    idle_loop();
 }
 
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     serial_println!("Kernel panic: {}", info);
-    hcf();
-}
-
-fn hcf() -> ! {
-    loop {
-        interrupts::disable();
-        hlt();
-    }
+    idle_loop();
 }
