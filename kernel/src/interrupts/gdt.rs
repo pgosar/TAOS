@@ -10,8 +10,8 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::PrivilegeLevel;
 use x86_64::VirtAddr;
 
-use crate::constants::MAX_CORES;
 use crate::constants::gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE};
+use crate::constants::MAX_CORES;
 
 const BASE_ENTRIES: usize = 5; // Null + kernel code/data + user code/data
 const TSS_ENTRIES_PER_CORE: usize = 2; // Each TSS is 16 bytes (2 entries) in long mode

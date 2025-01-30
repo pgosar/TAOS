@@ -29,9 +29,9 @@ pub fn disable() {
     interrupts::disable();
 }
 
-pub fn without_interrupts<F, R>(f: F) -> R 
+pub fn without_interrupts<F, R>(f: F) -> R
 where
-    F: FnOnce() -> R 
+    F: FnOnce() -> R,
 {
     interrupts::without_interrupts(f)
 }
@@ -40,9 +40,9 @@ pub fn are_enabled() -> bool {
     interrupts::are_enabled()
 }
 
-pub fn with_interrupts<F, R>(f: F) -> R 
+pub fn with_interrupts<F, R>(f: F) -> R
 where
-    F: FnOnce() -> R 
+    F: FnOnce() -> R,
 {
     let initially_enabled = are_enabled();
     if !initially_enabled {

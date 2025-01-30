@@ -10,10 +10,10 @@ pub mod interrupts;
 pub use devices::serial;
 
 pub mod prelude {
-    pub use crate::serial_print;
-    pub use crate::serial_println;
     pub use crate::debug_print;
     pub use crate::debug_println;
+    pub use crate::serial_print;
+    pub use crate::serial_println;
 }
 
 #[macro_export]

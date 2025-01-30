@@ -70,6 +70,7 @@ extern "C" fn kmain() -> ! {
     BOOT_COMPLETE.store(true, Ordering::SeqCst);
     serial_println!("All CPUs initialized");
 
+    idt::enable();
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
@@ -85,6 +86,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
         core::hint::spin_loop();
     }
 
+    idt::enable();
     serial_println!("AP {} entering idle loop", cpu.id);
     idle_loop();
 }
