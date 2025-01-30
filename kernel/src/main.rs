@@ -5,9 +5,9 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker, SmpRequest};
 use limine::smp::Cpu;
 use limine::BaseRevision;
+use taos::interrupts::{gdt, idt};
 use taos::serial_println;
 use x86_64::instructions::{hlt, interrupts};
-use taos::interrupts::idt;
 
 #[used]
 #[link_section = ".requests"]
@@ -36,9 +36,9 @@ static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
-    serial_println!("Booting on BSP...");
+    serial_println!("Booting BSP...");
+    gdt::init(0);
     idt::init_idt(0);
-    x86_64::instructions::interrupts::int3();
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -78,6 +78,8 @@ extern "C" fn kmain() -> ! {
 #[no_mangle]
 unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     CPU_COUNT.fetch_add(1, Ordering::SeqCst);
+    gdt::init(cpu.id);
+    idt::init_idt(cpu.id);
     serial_println!("AP {} initialized", cpu.id);
 
     while !BOOT_COMPLETE.load(Ordering::SeqCst) {

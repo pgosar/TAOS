@@ -4,4 +4,3 @@ mod devices;
 pub mod interrupts;
 
 pub use devices::*;
-
