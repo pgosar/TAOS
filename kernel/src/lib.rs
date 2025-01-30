@@ -6,6 +6,7 @@ use x86_64::instructions::hlt;
 pub mod constants;
 pub mod devices;
 pub mod interrupts;
+pub mod memory;
 
 pub use devices::serial;
 
