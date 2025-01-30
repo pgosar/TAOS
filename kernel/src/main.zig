@@ -66,8 +66,17 @@ export fn _start() callconv(.C) noreturn {
 
     debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
     debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+    const page_to_free = physical_frame_allocator.getPage() catch unreachable;
+
+    debugPrint("Next page: 0x{X}", .{page_to_free});
     debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
     debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+
+    debugPrint("Free page: 0x{X}", .{page_to_free});
+    physical_frame_allocator.freePage(page_to_free);
+
     debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
 
     vmm.init();

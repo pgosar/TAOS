@@ -157,4 +157,9 @@ pub const FrameAllocator = struct {
             self.next_available_frame = self.bitmap.findFirstFree() catch unreachable;
             return available_frame * lib.PAGE_SIZE;
         }
+
+        pub fn freePage(self: *Self, phys_addr: u64) void {
+            // free page at phys_addr
+            self.bitmap.setEntry(phys_addr / 4096, lib.BitMapAllocationStatus.FREE) catch unreachable;
+        }
     };
