@@ -1,6 +1,7 @@
 // A general purpose bitmap object that can be statically or dynamically allocated
 const std = @import("std");
 const lib = @import("../lib.zig");
+const debugPrint = @import("../util.zig").debugPrint;
 const Allocator = std.mem.Allocator;
 
 pub const BitmapError = error{

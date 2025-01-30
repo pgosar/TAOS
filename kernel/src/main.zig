@@ -4,13 +4,14 @@ const std = @import("std");
 const serial = @import("drivers/serial.zig");
 const idt = @import("interrupts/idt.zig");
 const gdt = @import("interrupts/gdt.zig");
-const kmalloc = @import("memory/allocator.zig");
 const lib = @import("lib.zig");
+const debugPrint = @import("util.zig").debugPrint;
+const expect = @import("std").testing.expect;
 
 extern fn load_tss(u32) void;
 extern fn reload_segments() void;
 const vmm = @import("memory/vmm.zig");
-const pmm = @import("memory/pmm.zig");
+const FrameAllocator = @import("memory/pmm.zig").FrameAllocator;
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -57,13 +58,19 @@ export fn _start() callconv(.C) noreturn {
         unreachable;
     }
 
-    kmalloc.init();
-
     serial.println("Initializing interrupts...", .{});
     idt.init();
 
     serial.println("Initializing vm...", .{});
-    pmm.init();
+    var physical_frame_allocator = FrameAllocator.init() catch unreachable;
+
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+    vmm.init();
 
     idt.enable_interrupts();
 
