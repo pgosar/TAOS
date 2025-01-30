@@ -4,11 +4,14 @@ const std = @import("std");
 const serial = @import("drivers/serial.zig");
 const idt = @import("interrupts/idt.zig");
 const gdt = @import("interrupts/gdt.zig");
-const kmalloc = @import("memory/allocator.zig");
 const lib = @import("lib.zig");
+const debugPrint = @import("util.zig").debugPrint;
+const expect = @import("std").testing.expect;
 
 extern fn load_tss(u32) void;
 extern fn reload_segments() void;
+const vmm = @import("memory/vmm.zig");
+const FrameAllocator = @import("memory/pmm.zig").FrameAllocator;
 
 pub export var framebuffer_request: limine.FramebufferRequest = .{};
 pub export var smp_request: limine.SmpRequest = .{};
@@ -42,7 +45,6 @@ fn smp_entry(info: *limine.SmpInfo) callconv(.C) noreturn {
 }
 
 export fn _start() callconv(.C) noreturn {
-
     serial.println("Kernel starting...", .{});
     if (smp_request.response) |smp_response| {
         const cpu_count = smp_response.cpu_count;
@@ -51,16 +53,33 @@ export fn _start() callconv(.C) noreturn {
         }
         serial.println("Initializing GDT and TSS...", .{});
         gdt.init(0);
-    }
-    else {
+    } else {
         serial.println("Cannot request how many cores machine has.", .{});
         unreachable;
     }
 
-    kmalloc.init();
-
     serial.println("Initializing interrupts...", .{});
     idt.init();
+
+    serial.println("Initializing vm...", .{});
+    var physical_frame_allocator = FrameAllocator.init() catch unreachable;
+
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+    const page_to_free = physical_frame_allocator.getPage() catch unreachable;
+
+    debugPrint("Next page: 0x{X}", .{page_to_free});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+
+    debugPrint("Free page: 0x{X}", .{page_to_free});
+    physical_frame_allocator.freePage(page_to_free);
+
+    debugPrint("Next page: 0x{X}", .{physical_frame_allocator.getPage() catch unreachable});
+
+    vmm.init();
 
     idt.enable_interrupts();
 
