@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use lazy_static::lazy_static;
-use x86_64::instructions::segmentation::{Segment, CS, DS, SS};
+use x86_64::instructions::segmentation::{Segment, ES, CS, SS, DS, FS, GS};
 use x86_64::instructions::tables::load_tss;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
@@ -75,8 +75,11 @@ pub fn init(cpu_id: u32) {
     unsafe {
         CS::set_reg(GDT.1.code_selector);
 
+        ES::set_reg(GDT.1.data_selector);
         DS::set_reg(GDT.1.data_selector);
         SS::set_reg(GDT.1.data_selector);
+        FS::set_reg(GDT.1.data_selector);
+        GS::set_reg(GDT.1.data_selector);
 
         load_tss(GDT.1.tss_selectors[cpu_id as usize]);
     }
