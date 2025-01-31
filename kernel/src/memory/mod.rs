@@ -1,2 +1,2 @@
-pub mod frameallocator;
+pub mod frame_allocator;
 pub mod memory;
