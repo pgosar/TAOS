@@ -18,7 +18,7 @@ impl BootIntoFrameAllocator {
         };
     }
 
-    // scan memory map and map only frames we know we can use
+    /// scan memory map and map only frames we know we can use
     pub fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
         let regions = self.memory_map.entries().iter();
         let usable_regions = regions.filter(|r| r.entry_type == EntryType::USABLE);
@@ -27,6 +27,7 @@ impl BootIntoFrameAllocator {
         frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
     }
 
+    /// gets the frame of a specific physical memory access
     pub fn get_frame(&mut self, addr: u64) -> PhysFrame {
         let frame = PhysFrame::containing_address(PhysAddr::new(addr));
         frame
@@ -34,6 +35,9 @@ impl BootIntoFrameAllocator {
 }
 
 unsafe impl FrameAllocator<Size4KiB> for BootIntoFrameAllocator {
+    /// allocates a frame that we can use
+    /// FIXME: Does not work when next sees no more frames
+    /// FIXME: Is not efficient
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let frame = self.usable_frames().nth(self.next);
         self.next += 1;
