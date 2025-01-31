@@ -2,11 +2,18 @@
 #![no_main]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker, SmpRequest};
+use limine::request::{
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
+    SmpRequest,
+};
+use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::interrupts::{gdt, idt};
+use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
+use x86_64::structures::paging::{Page, Translate};
+use x86_64::VirtAddr;
 
 #[used]
 #[link_section = ".requests"]
@@ -15,6 +22,14 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[link_section = ".requests"]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
 #[link_section = ".requests"]
@@ -71,6 +86,40 @@ extern "C" fn kmain() -> ! {
     serial_println!("All CPUs initialized");
 
     idt::enable();
+
+    // set up page tables
+    // get hhdm offset
+    let memory_map_response: &MemoryMapResponse = MEMORY_MAP_REQUEST
+        .get_response()
+        .expect("Memory map request failed");
+    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
+
+    let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
+
+    // decide what frames we can allocate based on memmap
+    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
+
+    let mut mapper = unsafe { paging::init(hhdm_offset) };
+
+    // test mapping
+    let page = Page::containing_address(VirtAddr::new(0xb8000));
+
+    paging::create_mapping(page, &mut mapper, &mut frame_allocator);
+
+    let addresses = [
+        // the identity-mapped vga buffer page
+        0xb8000, 0x201008,
+    ];
+    for &address in &addresses {
+        let phys = mapper.translate_addr(VirtAddr::new(address));
+        serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
+    }
+
+    // should trigger page fault and panic
+    //unsafe {
+    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
+    //}
+
     serial_println!("BSP entering idle loop");
     idle_loop();
 }

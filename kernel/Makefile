@@ -16,11 +16,17 @@ ifeq ($(RUST_PROFILE),dev)
     override RUST_PROFILE_SUBDIR := debug
 endif
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+FIND_CMD = find
+else
+FIND_CMD = gfind
+endif
+
 # Default target.
-.PHONY: all
 all:
 	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
-	cp target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f) kernel
+	cp target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && $(FIND_CMD) -maxdepth 1 -perm -111 -type f) kernel
 
 .PHONY: clean
 clean:
