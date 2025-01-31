@@ -10,8 +10,7 @@ use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::interrupts::{gdt, idt};
-use taos::memory::frame_allocator::BootIntoFrameAllocator;
-use taos::memory::memory;
+use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
@@ -98,19 +97,18 @@ extern "C" fn kmain() -> ! {
     let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
 
     // decide what frames we can allocate based on memmap
-    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(&memory_map_response) };
+    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
 
-    let mut mapper = unsafe { memory::init(hhdm_offset) };
+    let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
 
-    memory::create_mapping(page, &mut mapper, &mut frame_allocator);
+    paging::create_mapping(page, &mut mapper, &mut frame_allocator);
 
     let addresses = [
         // the identity-mapped vga buffer page
-        0xb8000,
-        0x201008,
+        0xb8000, 0x201008,
     ];
     for &address in &addresses {
         let phys = mapper.translate_addr(VirtAddr::new(address));
@@ -118,9 +116,9 @@ extern "C" fn kmain() -> ! {
     }
 
     // should trigger page fault and panic
-    // unsafe {
-    //     *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
-    // }
+    //unsafe {
+    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
+    //}
 
     serial_println!("BSP entering idle loop");
     idle_loop();

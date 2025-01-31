@@ -85,5 +85,5 @@ extern "x86-interrupt" fn page_fault_handler(
         stack_frame
     );
 
-    panic!("PAGE FAULT!");
+    //panic!("PAGE FAULT!");
 }

@@ -21,7 +21,7 @@ pub mod prelude {
 macro_rules! debug_print {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
-        crate::serial_print!($($arg)*);
+        $crate::serial_print!($($arg)*);
     }
 }
 
@@ -29,7 +29,7 @@ macro_rules! debug_print {
 macro_rules! debug_println {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
-        crate::serial_println!($($arg)*);
+        $crate::serial_println!($($arg)*);
     }
 }
 
