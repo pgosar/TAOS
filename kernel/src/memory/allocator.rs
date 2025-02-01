@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use crate::constants::memory::{HEAP_SIZE, HEAP_START};
 use talc::{ClaimOnOom, Span, Talc, Talck};
 use x86_64::{
     structures::paging::{
@@ -7,9 +8,6 @@ use x86_64::{
     },
     VirtAddr,
 };
-
-pub const HEAP_START: *mut u8 = 0x_0000_4444_4444_0000 as *mut u8;
-pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
