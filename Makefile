@@ -2,6 +2,7 @@
 override MAKEFLAGS += -rR
 
 override IMAGE_NAME := taos
+override STORAGE_NAME := storage
 
 # QEMU configuration
 QEMU := qemu-system-x86_64
@@ -11,6 +12,12 @@ QEMU_CPU := -smp 2
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
 QEMU_GDB := -s -S
+
+define QEMU_STORAGE :=
+-drive id=mysdcard,file=$(STORAGE_NAME).img,if=none,format=raw \
+-device sdhci-pci \
+-device sd-card, drive=mysdcard
+endef
 
 # Common QEMU flags groups
 QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
@@ -114,6 +121,10 @@ $(IMAGE_NAME).hdd: limine/limine kernel
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTX64.EFI ::/EFI/BOOT
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
+
+.PHONY: blank_drive
+blank_drive:
+	dd if=/dev/zero of=$(STORAGE_NAME).img bs=1M count=256
 
 .PHONY: clean
 clean:

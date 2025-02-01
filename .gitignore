@@ -2,3 +2,4 @@
 /ovmf
 *.iso
 *.hdd
+storage.img
