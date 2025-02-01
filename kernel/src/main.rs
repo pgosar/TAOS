@@ -3,9 +3,9 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker, SmpRequest};
-use limine::smp::Cpu;
+use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
-use taos::interrupts::{gdt, idt};
+use taos::interrupts::{gdt, idt, x2apic};
 use taos::{idle_loop, serial_println};
 
 #[used]
@@ -18,7 +18,7 @@ static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 #[used]
 #[link_section = ".requests"]
-static SMP_REQUEST: SmpRequest = SmpRequest::new();
+static SMP_REQUEST: SmpRequest = SmpRequest::new().with_flags(RequestFlags::X2APIC);
 
 #[used]
 #[link_section = ".requests_start_marker"]
@@ -36,8 +36,12 @@ extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     serial_println!("Booting BSP...");
+
     gdt::init(0);
     idt::init_idt(0);
+
+    let (apic_id, mode, ticks) = x2apic::init().expect("Failed to initialize the x2 APIC");
+    serial_println!("ID: {}\nMode: {:#?}\nTicks: {}", apic_id, mode, ticks);
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -80,6 +84,9 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     CPU_COUNT.fetch_add(1, Ordering::SeqCst);
     gdt::init(cpu.id);
     idt::init_idt(cpu.id);
+    /*let (apic_id, mode, ticks) = x2apic::init().expect("Failed to initialize the x2 APIC");
+    serial_println!("ID: {}\nMode: {:#?}\nTicks: {}", apic_id, mode, ticks);*/
+
     serial_println!("AP {} initialized", cpu.id);
 
     while !BOOT_COMPLETE.load(Ordering::SeqCst) {
