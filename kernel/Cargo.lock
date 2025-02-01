@@ -85,12 +85,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "talc"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fcad3be1cfe36eb7d716a04791eba36a197da9d9b6ea1e28e64ac569da3701d"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "taos"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
  "limine",
  "spin",
+ "talc",
  "uart_16550",
  "x86_64",
 ]
