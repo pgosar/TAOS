@@ -16,11 +16,11 @@ QEMU_GDB := -s -S
 define QEMU_STORAGE :=
 -drive id=mysdcard,file=$(STORAGE_NAME).img,if=none,format=raw \
 -device sdhci-pci \
--device sd-card, drive=mysdcard
+-device sd-card,drive=mysdcard
 endef
 
 # Common QEMU flags groups
-QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
+QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO) $(QEMU_STORAGE)
 QEMU_UEFI := $(QEMU_COMMON) -drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on -drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd
 QEMU_BIOS := $(QEMU_COMMON)
 
