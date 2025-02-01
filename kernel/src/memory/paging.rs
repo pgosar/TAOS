@@ -1,5 +1,7 @@
 use x86_64::{
-    structures::paging::{FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, Size4KiB},
+    structures::paging::{
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
+    },
     VirtAddr,
 };
 
@@ -31,7 +33,33 @@ pub fn create_mapping(
 ) {
     use x86_64::structures::paging::PageTableFlags as Flags;
 
-    let flags = Flags::PRESENT | Flags::WRITABLE;
+    let default_flags = Flags::PRESENT | Flags::WRITABLE;
+    create_mapping_with_flags(page, mapper, frame_allocator, default_flags);
+}
+
+/// Creates a example mapping, in unsafe. Additonally mapps said mapping
+/// To exist in uncacheable memory, making it usefull for memory mapped IO
+pub fn create_uncachable_mapping(
+    page: Page,
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+) {
+    use x86_64::structures::paging::PageTableFlags as Flags;
+
+    // Additionally this should set up this page to map to PAT 3,
+    // Which is by default set to Strong Uncacheable. See Section
+    // 13.12 of Volume 3 of the Intel Manual (December 2024)
+    let uncacheable_flags =
+        Flags::PRESENT | Flags::WRITABLE | Flags::WRITE_THROUGH | Flags::NO_CACHE;
+    create_mapping_with_flags(page, mapper, frame_allocator, uncacheable_flags);
+}
+
+fn create_mapping_with_flags(
+    page: Page,
+    mapper: &mut OffsetPageTable,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    flags: PageTableFlags,
+) {
     let frame = frame_allocator.allocate_frame().expect("no more frames");
 
     let map_to_result = unsafe {

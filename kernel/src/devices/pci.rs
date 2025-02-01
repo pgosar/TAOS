@@ -7,27 +7,31 @@ use crate::debug_println;
 const MAX_PCI_DEVICES: usize = 16;
 const CONFIG_ADDRESS_BUS: u16 = 0xCF8;
 const CONFIG_DATA_BUS: u16 = 0xCFC;
+pub const COMMAND_INTERRUPT_DISABLE: u16 = 0x1 << 10;
+pub const COMMAND_BUS_MASTER: u16 = 0x1 << 2;
+pub const COMMAND_MEMORY_SPACE: u16 = 0x1 << 1;
+pub const COMMAND_IO_SPACE: u16 = 0x1;
 
 pub struct DeviceInfo {
-    bus: u8,
-    device: u8,
-    device_id: u16,
-    vendor_id: u16,
-    status: u16,
-    command: u16,
-    class_code: u8,
-    subclass: u8,
-    programming_interface: u8,
-    revision_id: u8,
-    built_in_self_test: u8,
-    header_type: u8,
-    latency_timer: u8,
-    cache_line_size: u8,
+    pub bus: u8,
+    pub device: u8,
+    pub device_id: u16,
+    pub vendor_id: u16,
+    pub status: u16,
+    pub command: u16,
+    pub class_code: u8,
+    pub subclass: u8,
+    pub programming_interface: u8,
+    pub revision_id: u8,
+    pub built_in_self_test: u8,
+    pub header_type: u8,
+    pub latency_timer: u8,
+    pub cache_line_size: u8,
 }
 
 pub struct AllDeviceInfo {
-    devices_connected: usize,
-    device_info: [Option<DeviceInfo>; MAX_PCI_DEVICES],
+    pub devices_connected: usize,
+    pub device_info: [Option<DeviceInfo>; MAX_PCI_DEVICES],
 }
 
 fn get_pci_addres(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
@@ -47,6 +51,9 @@ fn get_pci_addres(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
         | offset_extended;
 }
 
+/// Reads from pci config and returns the result into a u32. Note: device must be 
+/// less than 32, function must be less than 8, and offset must be a multiple 
+/// of 4.
 pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let address = get_pci_addres(bus, device, function, offset);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
@@ -57,8 +64,11 @@ pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 
     return config_port.read();
 }
 
-pub unsafe fn write_command(bus: u8, device: u8, function: u8, offset: u8, command: u16) {
-    let address = get_pci_addres(bus, device, function, offset);
+/// Writes the given command into the command register. It is recommended
+/// to get the old value of command and set and unset the appropate bits
+/// from the command, as some bits are read only.
+pub unsafe fn write_command(bus: u8, device: u8, function: u8, command: u16) {
+    let address = get_pci_addres(bus, device, function, 0x4);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
         port::PortGeneric::new(CONFIG_ADDRESS_BUS);
     address_port.write(address);
@@ -71,6 +81,7 @@ pub unsafe fn write_command(bus: u8, device: u8, function: u8, offset: u8, comma
 
     config_port.write(old_data);
 }
+
 fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
     let mut config_word = unsafe { read_config(bus, device, 0, 0) };
     let device_id: u16 = (config_word >> 16).try_into().unwrap();
@@ -124,7 +135,9 @@ fn print_pci_info(device: &DeviceInfo) {
     debug_println!("status = 0x{:X}", { device.status });
     debug_println!("class_code = 0x{:X}", { device.class_code });
     debug_println!("subclass = 0x{:X}", { device.subclass });
-    debug_println!("programming_interface = 0x{:X}", { device.programming_interface });
+    debug_println!("programming_interface = 0x{:X}", {
+        device.programming_interface
+    });
 }
 
 pub fn walk_pci_bus() -> AllDeviceInfo {

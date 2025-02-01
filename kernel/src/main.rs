@@ -10,6 +10,7 @@ use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::devices::pci::walk_pci_bus;
+use taos::devices::sd_card::{find_sd_card, initalize_sd_card};
 use taos::interrupts::{gdt, idt};
 use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
@@ -116,7 +117,11 @@ extern "C" fn kmain() -> ! {
         serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
     }
 
-    walk_pci_bus();
+    let devices = walk_pci_bus();
+    match find_sd_card(&devices) {
+        None => (),
+        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator),
+    }
 
     // should trigger page fault and panic
     //unsafe {
