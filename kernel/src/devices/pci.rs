@@ -2,6 +2,8 @@ use x86_64::instructions::port::{
     self, PortGeneric, ReadOnlyAccess, ReadWriteAccess, WriteOnlyAccess,
 };
 
+use crate::debug_println;
+
 const MAX_PCI_DEVICES: usize = 16;
 const CONFIG_ADDRESS_BUS: u16 = 0xCF8;
 const CONFIG_DATA_BUS: u16 = 0xCFC;
@@ -113,6 +115,18 @@ fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
     return Option::Some(device_info);
 }
 
+fn print_pci_info(device: &DeviceInfo) {
+    debug_println!("----------");
+    debug_println!("bus = {}", { device.bus });
+    debug_println!("device = {}", { device.device });
+    debug_println!("device_id = 0x{:X}", { device.device_id });
+    debug_println!("vendor_id = 0x{:X}", { device.vendor_id });
+    debug_println!("status = 0x{:X}", { device.status });
+    debug_println!("class_code = 0x{:X}", { device.class_code });
+    debug_println!("subclass = 0x{:X}", { device.subclass });
+    debug_println!("programming_interface = 0x{:X}", { device.programming_interface });
+}
+
 pub fn walk_pci_bus() -> AllDeviceInfo {
     let mut connected_devices = 0;
     let mut bus: u16 = 0;
@@ -121,10 +135,13 @@ pub fn walk_pci_bus() -> AllDeviceInfo {
     while bus < 256 {
         let mut device: u8 = 0;
         while device < 32 {
-            let device_info = device_connected(bus.try_into().unwrap(), device);
-            if device_info.is_some() {
-                devices[connected_devices] = device_info;
-                connected_devices += 1;
+            match device_connected(bus.try_into().unwrap(), device) {
+                None => (),
+                Some(device_info) => {
+                    print_pci_info(&device_info);
+                    devices[connected_devices] = Some(device_info);
+                    connected_devices += 1;
+                }
             }
             device += 1
         }

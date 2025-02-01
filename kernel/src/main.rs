@@ -9,6 +9,7 @@ use limine::request::{
 use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
+use taos::devices::pci::walk_pci_bus;
 use taos::interrupts::{gdt, idt};
 use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
@@ -114,6 +115,8 @@ extern "C" fn kmain() -> ! {
         let phys = mapper.translate_addr(VirtAddr::new(address));
         serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
     }
+
+    walk_pci_bus();
 
     // should trigger page fault and panic
     //unsafe {
