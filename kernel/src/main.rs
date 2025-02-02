@@ -10,14 +10,15 @@ use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::interrupts::{gdt, idt};
-use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
+use taos::memory::{boot_frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
-use x86_64::structures::paging::{Page, Translate};
+use x86_64::structures::paging::{FrameAllocator, Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
 extern crate alloc;
 use alloc::boxed::Box;
 use taos::memory::allocator;
+use taos::memory::frame_allocator::BitmapFrameAllocator;
 
 #[used]
 #[link_section = ".requests"]
@@ -121,7 +122,7 @@ extern "C" fn kmain() -> ! {
 
     // testing that the heap allocation works
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-    let x: Box<i32> = Box::new(10);
+    let mut x: Box<i32> = Box::new(10);
     let y: Box<i32> = Box::new(20);
     let z: Box<i32> = Box::new(30);
     serial_println!(
@@ -138,9 +139,36 @@ extern "C" fn kmain() -> ! {
     );
 
     // should trigger page fault and panic
-    //unsafe {
-    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
-    //}
+    unsafe {
+        *x = 42; // Guaranteed to page fault
+    }
+
+    let mut bitmap_allocator: BitmapFrameAllocator = unsafe {
+        BitmapFrameAllocator::init(memory_map_response, frame_allocator.allocated_frames())
+    };
+
+
+    let alloc_dealloc_addr = VirtAddr::new(0x12515);
+    let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
+    paging::create_mapping(new_page, &mut mapper, &mut bitmap_allocator);
+    let phys = mapper.translate_addr(alloc_dealloc_addr).expect("Translation failed");
+    serial_println!(
+        "{:?} -> {:?}, and the frame is {}",
+        alloc_dealloc_addr,
+        phys,
+        bitmap_allocator.is_frame_used(PhysFrame::containing_address(phys))
+    );
+    serial_println!("Now unmapping the page");
+    paging::remove_mapping(new_page, &mut mapper, &mut bitmap_allocator);
+    mapper.translate_addr(alloc_dealloc_addr).expect("Translation failed");
+
+    // let addresses = [
+    //     0x236262
+    // ];
+    // for &address in &addresses {
+    //     let phys = mapper.translate_addr(VirtAddr::new(address));
+    //     serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
+    // }
 
     serial_println!("BSP entering idle loop");
     idle_loop();
