@@ -7,8 +7,7 @@ override IMAGE_NAME := taos
 QEMU := qemu-system-x86_64
 QEMU_MACHINE := -M q35,accel=kvm,dump-guest-core=off -singlestep
 QEMU_MEMORY := -m 4G
-QEMU_CPU := -smp 2 -cpu Skylake-Client-v4,vmx=off,+x2apic,-mpx,-xsaves
-#QEMU_CPU := -smp 2 -cpu Skylake-Client-v4,vmx=off,+x2apic,-mpx,-xsaves,+invtsc,tsc-frequency=2803201000
+QEMU_CPU := -smp 2 -cpu host,+x2apic,+invtsc
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
 QEMU_GRAPHICS := -vga std

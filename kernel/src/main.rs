@@ -40,8 +40,9 @@ extern "C" fn kmain() -> ! {
     gdt::init(0);
     idt::init_idt(0);
 
-    let (apic_id, mode, ticks) = x2apic::init().expect("Failed to initialize the x2 APIC");
-    serial_println!("ID: {}\nMode: {:#?}\nTicks: {}", apic_id, mode, ticks);
+    x2apic::init_x2apic().expect("Failed to initialize x2apic");
+    let ticks = x2apic::calibrate_apic_timer().expect("Failed to calibrate apic timer");
+    serial_println!("{}", ticks);
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -74,6 +75,7 @@ extern "C" fn kmain() -> ! {
     BOOT_COMPLETE.store(true, Ordering::SeqCst);
     serial_println!("All CPUs initialized");
 
+    x2apic::configure_cpu_timer(32, 4, ticks).unwrap();
     idt::enable();
     serial_println!("BSP entering idle loop");
     idle_loop();

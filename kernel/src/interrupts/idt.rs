@@ -2,7 +2,11 @@ use lazy_static::lazy_static;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
+use crate::interrupts::x2apic::eoi;
 use crate::prelude::*;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+static LAST_TICK: AtomicU64 = AtomicU64::new(0);
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -13,6 +17,7 @@ lazy_static! {
                 .set_handler_fn(double_fault_handler)
                 .set_stack_index(0);
         }
+        idt[32].set_handler_fn(timer_handler);
         idt
     };
 }
@@ -67,4 +72,20 @@ extern "x86-interrupt" fn double_fault_handler(
     _error_code: u64,
 ) -> ! {
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
+    let now = unsafe { core::arch::x86_64::_rdtsc() };
+    let last = LAST_TICK.load(Ordering::Relaxed);
+    
+    if last != 0 {
+        let diff = now - last;
+        serial_print!(".({}) ", diff);  // Print dot and cycle count between ticks
+    } else {
+        serial_print!(".");  // First tick, just print dot
+    }
+    
+    LAST_TICK.store(now, Ordering::Relaxed);
+
+    eoi().expect("Failed to signal EOI"); // Signal end-of-interrupt
 }
