@@ -125,30 +125,27 @@ impl Pit {
         let mut prev_count = self.read_count();
         let mut iterations = 0;
         let mut total_ticks = 0;
-        
+
         while iterations < 1000000 {
             let current = self.read_count();
-            
-            // Calculate ticks elapsed in this step, handling wraparound
+
             let ticks = if current > prev_count {
-                // Counter wrapped around
                 (prev_count as u32) + (0xFFFF - current as u32)
             } else {
                 (prev_count - current) as u32
             };
-            
+
             total_ticks += ticks;
-            
-            // Have we waited long enough?
+
             if total_ticks >= original_count as u32 {
                 return Ok(());
             }
-    
+
             prev_count = current;
             iterations += 1;
             core::hint::spin_loop();
         }
-    
+
         serial_print!("PIT timed out after {} iterations\n", iterations);
         Err(ApicError::PitTimeout)
     }
@@ -176,13 +173,10 @@ pub fn calibrate_apic_timer() -> Result<u32, ApicError> {
         lapic.enable_timer();
         lapic.set_timer_initial(0);
 
-        // Calculate PIT ticks for 100ms calibration period
         let pit_ticks = ((PIT_FREQ as u64 * PIT_TICKS as u64) / 1000) as u16;
 
-        // Configure and start PIT
         pit.configure_for_calibration(pit_ticks)?;
 
-        // Start APIC timer with maximum value
         lapic.set_timer_initial(u32::MAX);
 
         pit.wait_for_completion(pit_ticks)?;

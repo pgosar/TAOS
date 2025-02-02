@@ -77,14 +77,14 @@ extern "x86-interrupt" fn double_fault_handler(
 extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
     let now = unsafe { core::arch::x86_64::_rdtsc() };
     let last = LAST_TICK.load(Ordering::Relaxed);
-    
+
     if last != 0 {
         let diff = now - last;
-        serial_print!(".({}) ", diff);  // Print dot and cycle count between ticks
+        serial_print!(".({}) ", diff); // Print dot and cycle count between ticks
     } else {
-        serial_print!(".");  // First tick, just print dot
+        serial_print!("."); // First tick, just print dot
     }
-    
+
     LAST_TICK.store(now, Ordering::Relaxed);
 
     eoi().expect("Failed to signal EOI"); // Signal end-of-interrupt
