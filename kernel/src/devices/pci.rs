@@ -51,8 +51,8 @@ fn get_pci_addres(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
         | offset_extended;
 }
 
-/// Reads from pci config and returns the result into a u32. Note: device must be 
-/// less than 32, function must be less than 8, and offset must be a multiple 
+/// Reads from pci config and returns the result into a u32. Note: device must be
+/// less than 32, function must be less than 8, and offset must be a multiple
 /// of 4.
 pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let address = get_pci_addres(bus, device, function, offset);
@@ -64,10 +64,22 @@ pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 
     return config_port.read();
 }
 
+pub unsafe fn write_pci_data(bus: u8, device: u8, function: u8, offset: u8, data: u32) {
+    let address = get_pci_addres(bus, device, function, offset);
+    let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
+        port::PortGeneric::new(CONFIG_ADDRESS_BUS);
+    address_port.write(address);
+
+    let mut config_port: PortGeneric<u32, WriteOnlyAccess> =
+        port::PortGeneric::new(CONFIG_DATA_BUS);
+
+    config_port.write(data);
+}
+
 /// Writes the given command into the command register. It is recommended
 /// to get the old value of command and set and unset the appropate bits
-/// from the command, as some bits are read only.
-pub unsafe fn write_command(bus: u8, device: u8, function: u8, command: u16) {
+/// from the command, as some bits are read only
+pub unsafe fn write_pci_command(bus: u8, device: u8, function: u8, command: u16) {
     let address = get_pci_addres(bus, device, function, 0x4);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
         port::PortGeneric::new(CONFIG_ADDRESS_BUS);
