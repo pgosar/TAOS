@@ -9,3 +9,6 @@ limine = "0.3.1"
 spin = "0.9.8"
 uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
+
+[patch.crates-io]
+limine = { path = "../../limine-rs" }

@@ -5,6 +5,8 @@ use x86_64::{
     PhysAddr,
 };
 
+use crate::debug_println;
+
 pub struct BootIntoFrameAllocator {
     memory_map: &'static MemoryMapResponse,
     next: usize,
@@ -21,6 +23,9 @@ impl BootIntoFrameAllocator {
     /// scan memory map and map only frames we know we can use
     pub fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
         let regions = self.memory_map.entries().iter();
+        // for region in regions.clone() {
+        //     debug_println!("Region base 0x{:X}, length 0x{:X}, status {:?}", region.base, region.length, region.entry_type);
+        // }
         let usable_regions = regions.filter(|r| r.entry_type == EntryType::USABLE);
         let addr_ranges = usable_regions.map(|r| r.base..=r.base + r.length);
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));

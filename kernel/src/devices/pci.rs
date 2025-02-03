@@ -61,7 +61,9 @@ pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 
     address_port.write(address);
 
     let mut config_port: PortGeneric<u32, ReadOnlyAccess> = port::PortGeneric::new(CONFIG_DATA_BUS);
-    return config_port.read();
+    let data = config_port.read();
+    address_port.write(0);
+    return data;
 }
 
 pub unsafe fn write_pci_data(bus: u8, device: u8, function: u8, offset: u8, data: u32) {
@@ -74,6 +76,7 @@ pub unsafe fn write_pci_data(bus: u8, device: u8, function: u8, offset: u8, data
         port::PortGeneric::new(CONFIG_DATA_BUS);
 
     config_port.write(data);
+    address_port.write(0);
 }
 
 /// Writes the given command into the command register. It is recommended
@@ -87,11 +90,12 @@ pub unsafe fn write_pci_command(bus: u8, device: u8, function: u8, command: u16)
 
     let mut config_port: PortGeneric<u32, ReadWriteAccess> =
         port::PortGeneric::new(CONFIG_DATA_BUS);
-    let mut old_data: u32 = config_port.read();
-    old_data &= 0xFFFF0000;
-    old_data |= <u16 as Into<u32>>::into(command);
+    let mut data: u32 = config_port.read();
+    data &= 0xFFFF0000;
+    data |= <u16 as Into<u32>>::into(command);
 
-    config_port.write(old_data);
+    config_port.write(data);
+    address_port.write(0);
 }
 
 fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {

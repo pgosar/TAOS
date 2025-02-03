@@ -2,12 +2,12 @@
 #![no_main]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use limine::mp::Cpu;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
-    SmpRequest,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
+    RequestsStartMarker,
 };
 use limine::response::MemoryMapResponse;
-use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::devices::pci::walk_pci_bus;
 use taos::devices::sd_card::{find_sd_card, initalize_sd_card};
@@ -35,7 +35,7 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
 #[link_section = ".requests"]
-static SMP_REQUEST: SmpRequest = SmpRequest::new();
+static SMP_REQUEST: MpRequest = MpRequest::new();
 
 #[used]
 #[link_section = ".requests_start_marker"]
