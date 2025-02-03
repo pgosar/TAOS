@@ -15,6 +15,10 @@ use taos::{idle_loop, serial_println};
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
 
+extern crate alloc;
+use alloc::boxed::Box;
+use taos::memory::allocator;
+
 #[used]
 #[link_section = ".requests"]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
@@ -114,6 +118,24 @@ extern "C" fn kmain() -> ! {
         let phys = mapper.translate_addr(VirtAddr::new(address));
         serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
     }
+
+    // testing that the heap allocation works
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    let x: Box<i32> = Box::new(10);
+    let y: Box<i32> = Box::new(20);
+    let z: Box<i32> = Box::new(30);
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&x) as *const i32
+    );
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&y) as *const i32
+    );
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&z) as *const i32
+    );
 
     // should trigger page fault and panic
     //unsafe {
