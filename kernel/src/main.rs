@@ -2,9 +2,9 @@
 #![no_main]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use limine::mp::Cpu;
+use limine::smp::Cpu;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, SmpRequest, RequestsEndMarker,
     RequestsStartMarker,
 };
 use limine::response::MemoryMapResponse;
@@ -35,7 +35,7 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
 #[link_section = ".requests"]
-static SMP_REQUEST: MpRequest = MpRequest::new();
+static SMP_REQUEST: SmpRequest = SmpRequest::new();
 
 #[used]
 #[link_section = ".requests_start_marker"]

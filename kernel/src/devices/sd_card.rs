@@ -1,5 +1,6 @@
+
 use x86_64::{
-    structures::paging::{OffsetPageTable, Page, PhysFrame, Translate},
+    structures::paging::{OffsetPageTable, Page, PhysFrame},
     PhysAddr, VirtAddr,
 };
 
@@ -65,4 +66,21 @@ pub fn initalize_sd_card(
     }
 
     // Weve mapped stuff to physcial memory, mAYBE
+    // Wait for stuff to initalize
+
+    loop {
+        let block_count = unsafe {core::ptr::read_volatile((bar_address + 0x28) as *const u8)};
+        if block_count != 0 {
+            break;
+        }
+
+        core::hint::spin_loop();
+    }
+
+    let host_control_2_ptr = (bar_address + 0x3E) as *const u16;
+    
+    let hc2_data = unsafe {
+        core::ptr::read_volatile(host_control_2_ptr)
+    };
+    debug_println!("Hc2_data = 0x{hc2_data:X}");
 }
