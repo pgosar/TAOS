@@ -5,6 +5,8 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
+
 /// initializes vmem system. activates pml4 and sets up page tables
 pub unsafe fn init(hhdm_base: VirtAddr) -> OffsetPageTable<'static> {
     let pml4 = active_level_4_table(hhdm_base);
@@ -26,19 +28,15 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 }
 
 /// Creates an example mapping, in unsafe
-pub fn create_mapping(
-    page: Page,
-    mapper: &mut OffsetPageTable,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) {
+pub fn create_mapping(page: Page, mapper: &mut OffsetPageTable) {
     use x86_64::structures::paging::PageTableFlags as Flags;
 
     let flags = Flags::PRESENT | Flags::WRITABLE;
-    let frame = frame_allocator.allocate_frame().expect("no more frames");
+    let frame = alloc_frame().expect("no more frames");
 
     let map_to_result = unsafe {
         // FIXME: this is not safe, we do it only for testing
-        mapper.map_to(page, frame, flags, frame_allocator)
+        mapper.map_to(page, frame, flags, FRAME_ALLOCATOR.lock().expect(""));
     };
     map_to_result.expect("map_to failed").flush();
 }

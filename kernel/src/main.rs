@@ -19,8 +19,10 @@ use taos::{
     idle_loop,
     interrupts::{gdt, idt},
     memory::{
-        boot_frame_allocator::BootIntoFrameAllocator, frame_allocator::BitmapFrameAllocator, heap,
-        paging,
+        bitmap_frame_allocator::BitmapFrameAllocator,
+        boot_frame_allocator::BootIntoFrameAllocator,
+        frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
+        heap, paging,
     },
     serial_println,
 };
@@ -106,15 +108,19 @@ extern "C" fn kmain() -> ! {
 
     let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
 
-    // decide what frames we can allocate based on memmap
-    let mut boot_frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
+    // create a basic frame allocator and set it globally
+    unsafe {
+        *FRAME_ALLOCATOR.lock() = Some(GlobalFrameAllocator::Boot(BootIntoFrameAllocator::init(
+            memory_map_response,
+        )));
+    }
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
 
-    paging::create_mapping(page, &mut mapper, &mut boot_frame_allocator);
+    paging::create_mapping(page, &mut mapper);
 
     let addresses = [
         // the identity-mapped vga buffer page

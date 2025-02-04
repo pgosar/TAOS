@@ -5,7 +5,7 @@ use crate::{
 use limine::memory_map::EntryType;
 use limine::response::MemoryMapResponse;
 use x86_64::{
-    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
+    structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
     PhysAddr,
 };
 
@@ -84,5 +84,11 @@ unsafe impl FrameAllocator<Size4KiB> for BootIntoFrameAllocator {
         self.allocated_count += 1;
 
         frame
+    }
+}
+
+impl FrameDeallocator<Size4KiB> for BootIntoFrameAllocator {
+    unsafe fn deallocate_frame(&mut self, _frame: PhysFrame<Size4KiB>) {
+        panic!("Cannot deallocate frames for boot frame allocator")
     }
 }
