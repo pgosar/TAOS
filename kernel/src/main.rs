@@ -19,7 +19,6 @@ use taos::{
     idle_loop,
     interrupts::{gdt, idt},
     memory::{
-        bitmap_frame_allocator::BitmapFrameAllocator,
         boot_frame_allocator::BootIntoFrameAllocator,
         frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
         heap, paging,
@@ -132,7 +131,7 @@ extern "C" fn kmain() -> ! {
     }
 
     // testing that the heap allocation works
-    heap::init_heap(&mut mapper, &mut boot_frame_allocator).expect("heap initialization failed");
+    heap::init_heap(&mut mapper).expect("heap initialization failed");
     let x: Box<i32> = Box::new(10);
     let y: Box<i32> = Box::new(20);
     let z: Box<i32> = Box::new(30);
@@ -149,27 +148,34 @@ extern "C" fn kmain() -> ! {
         Box::as_ref(&z) as *const i32
     );
 
-    // switch over to "smart" frame_allocator
-    let mut frame_allocator: BitmapFrameAllocator = unsafe {
-        BitmapFrameAllocator::init(memory_map_response, boot_frame_allocator.allocated_frames())
-    };
-
     let alloc_dealloc_addr = VirtAddr::new(0x12515);
     let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
-    paging::create_mapping(new_page, &mut mapper, &mut frame_allocator);
+    serial_println!("Mapping a new page");
+    paging::create_mapping(new_page, &mut mapper);
+
     let phys = mapper
         .translate_addr(alloc_dealloc_addr)
         .expect("Translation failed");
-
-    serial_println!(
-        "{:?} -> {:?}, and the frame is {}",
-        alloc_dealloc_addr,
-        phys,
-        frame_allocator.is_frame_used(PhysFrame::containing_address(phys))
-    );
+    // A downside of the current approach is that it is difficult to get the
+    // specific methods that are a part of any allocator. Here is an example
+    // on how to do this.
+    {
+        let mut alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Bitmap(ref mut bitmap_alloc)) => {
+                serial_println!(
+                    "{:?} -> {:?}, and the frame is {}",
+                    alloc_dealloc_addr,
+                    phys,
+                    bitmap_alloc.is_frame_used(PhysFrame::containing_address(phys))
+                );
+            }
+            _ => panic!("Bitmap alloc expected here"),
+        }
+    }
 
     serial_println!("Now unmapping the page");
-    paging::remove_mapping(new_page, &mut mapper, &mut frame_allocator);
+    paging::remove_mapping(new_page, &mut mapper);
     match mapper.translate_addr(alloc_dealloc_addr) {
         Some(phys_addr) => {
             serial_println!("Mapping still exists at physical address: {:?}", phys_addr);
@@ -179,6 +185,18 @@ extern "C" fn kmain() -> ! {
         }
     }
 
+    {
+        let alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Boot(ref _boot_alloc)) => {
+                serial_println!("Boot frame allocator in use");
+            }
+            Some(GlobalFrameAllocator::Bitmap(ref _bitmap_alloc)) => {
+                serial_println!("Bitmap frame allocator in use");
+            }
+            _ => panic!("Unknown frame allocator"),
+        }
+    }
     serial_println!("BSP entering idle loop");
     idle_loop();
 }

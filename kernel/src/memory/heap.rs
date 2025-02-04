@@ -1,13 +1,16 @@
 extern crate alloc;
 
 use crate::constants::memory::{HEAP_SIZE, HEAP_START};
+use crate::memory::{frame_allocator::FRAME_ALLOCATOR, paging::create_mapping};
+use crate::serial_println;
 use talc::{ClaimOnOom, Span, Talc, Talck};
 use x86_64::{
-    structures::paging::{
-        mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
-    },
+    structures::paging::{mapper::MapToError, Mapper, Page, Size4KiB},
     VirtAddr,
 };
+
+use super::bitmap_frame_allocator::BitmapFrameAllocator;
+use super::frame_allocator::GlobalFrameAllocator;
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
@@ -15,10 +18,8 @@ static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
 })
 .lock();
 
-pub fn init_heap(
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) -> Result<(), MapToError<Size4KiB>> {
+/// Initialize the heap and switch to using the bitmap frame_allocator
+pub fn init_heap(mapper: &mut impl Mapper<Size4KiB>) -> Result<(), MapToError<Size4KiB>> {
     let page_range = {
         let heap_start = VirtAddr::new(HEAP_START as u64);
         let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;
@@ -28,12 +29,30 @@ pub fn init_heap(
     };
 
     for page in page_range {
-        let frame = frame_allocator
-            .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe { mapper.map_to(page, frame, flags, frame_allocator)?.flush() };
+        create_mapping(page, mapper);
     }
 
+    switch_allocator();
+
+    serial_println!("Allocator switched to bitmap allocator");
+
     Ok(())
+}
+
+fn switch_allocator() {
+    let mut alloc = FRAME_ALLOCATOR.lock();
+    match *alloc {
+        Some(GlobalFrameAllocator::Boot(ref boot_alloc)) => {
+            unsafe {
+                let bitmap_frame_allocator = BitmapFrameAllocator::init(
+                    boot_alloc.memory_map,
+                    boot_alloc.allocated_frames(),
+                );
+                *alloc = Some(GlobalFrameAllocator::Bitmap(bitmap_frame_allocator));
+
+                serial_println!("new frame allocator set");
+            };
+        }
+        _ => panic!("We must be using Boot Frame Allocator at this point"),
+    }
 }

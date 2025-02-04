@@ -4,8 +4,11 @@ use spin::Mutex;
 
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 
+/// Global frame allocator that makes it so we just have one actual allocator throughout codebase
+/// Requires some basic synchronization
 pub static FRAME_ALLOCATOR: Mutex<Option<GlobalFrameAllocator>> = Mutex::new(None);
 
+/// Enum of supported allocators
 pub enum GlobalFrameAllocator {
     Boot(BootIntoFrameAllocator),
     Bitmap(BitmapFrameAllocator),
@@ -31,6 +34,7 @@ impl FrameDeallocator<Size4KiB> for GlobalFrameAllocator {
     }
 }
 
+/// Exposed function to allocate a frame that runs the global's allocate_frame
 pub fn alloc_frame() -> Option<PhysFrame> {
     // Lock the global allocator.
     let mut allocator_lock = FRAME_ALLOCATOR.lock();
@@ -44,14 +48,13 @@ pub fn alloc_frame() -> Option<PhysFrame> {
 }
 
 
-pub fn dealloc_frame(frame: PhysFrame<Size4KiB>) -> Option<PhysFrame> {
+/// Exposed function to allocate a frame that runs the global's deallocate_frame
+pub fn dealloc_frame(frame: PhysFrame<Size4KiB>) {
     // Lock the global allocator.
     let mut allocator_lock = FRAME_ALLOCATOR.lock();
 
     // Get a mutable reference to the allocator if it exists, then call allocate_frame.
-    if let Some(ref mut allocator) = *allocator_lock {
-        allocator.deallocate_frame(frame)
-    } else {
-        None
-    }
+    if let Some(ref mut deallocator) = *allocator_lock {
+        unsafe { deallocator.deallocate_frame(frame) }
+    } 
 }

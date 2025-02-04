@@ -1,7 +1,5 @@
 use x86_64::{
-    structures::paging::{
-        FrameAllocator, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable, Size4KiB,
-    },
+    structures::paging::{Mapper, OffsetPageTable, Page, PageTable, Size4KiB},
     VirtAddr,
 };
 
@@ -28,7 +26,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 }
 
 /// Creates an example mapping, in unsafe
-pub fn create_mapping(page: Page, mapper: &mut OffsetPageTable) {
+pub fn create_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
     use x86_64::structures::paging::PageTableFlags as Flags;
 
     let flags = Flags::PRESENT | Flags::WRITABLE;
@@ -36,21 +34,25 @@ pub fn create_mapping(page: Page, mapper: &mut OffsetPageTable) {
 
     let map_to_result = unsafe {
         // FIXME: this is not safe, we do it only for testing
-        mapper.map_to(page, frame, flags, FRAME_ALLOCATOR.lock().expect(""));
+        mapper.map_to(
+            page,
+            frame,
+            flags,
+            FRAME_ALLOCATOR
+                .lock()
+                .as_mut()
+                .expect("Global allocator not initialized"),
+        )
     };
     map_to_result.expect("map_to failed").flush();
 }
 
-pub fn remove_mapping(
-    page: Page,
-    mapper: &mut OffsetPageTable,
-    frame_deallocator: &mut impl FrameDeallocator<Size4KiB>,
-) {
+pub fn remove_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
     let unmap_result = mapper.unmap(page);
 
     let (frame, flush) = unmap_result.expect("map_to failed");
 
-    unsafe { frame_deallocator.deallocate_frame(frame) };
+    dealloc_frame(frame);
 
     flush.flush();
 }
