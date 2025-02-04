@@ -12,6 +12,7 @@ use x86_64::{
 pub struct BootIntoFrameAllocator {
     memory_map: &'static MemoryMapResponse,
     next: usize,
+    // we note the first and last frame allocated to reallocate later
     first_frame: Option<PhysFrame>,
     last_frame: Option<PhysFrame>,
     allocated_count: usize,

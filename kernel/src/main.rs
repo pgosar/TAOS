@@ -9,16 +9,21 @@ use limine::request::{
 use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
-use taos::interrupts::{gdt, idt};
-use taos::memory::{boot_frame_allocator::BootIntoFrameAllocator, paging};
-use taos::{idle_loop, serial_println};
-use x86_64::structures::paging::{FrameAllocator, Page, PhysFrame, Size4KiB, Translate};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
 extern crate alloc;
 use alloc::boxed::Box;
-use taos::memory::allocator;
-use taos::memory::frame_allocator::BitmapFrameAllocator;
+
+use taos::{
+    idle_loop,
+    interrupts::{gdt, idt},
+    memory::{
+        boot_frame_allocator::BootIntoFrameAllocator, frame_allocator::BitmapFrameAllocator, heap,
+        paging,
+    },
+    serial_println,
+};
 
 #[used]
 #[link_section = ".requests"]
@@ -102,14 +107,14 @@ extern "C" fn kmain() -> ! {
     let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
 
     // decide what frames we can allocate based on memmap
-    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
+    let mut boot_frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
 
-    paging::create_mapping(page, &mut mapper, &mut frame_allocator);
+    paging::create_mapping(page, &mut mapper, &mut boot_frame_allocator);
 
     let addresses = [
         // the identity-mapped vga buffer page
@@ -121,8 +126,8 @@ extern "C" fn kmain() -> ! {
     }
 
     // testing that the heap allocation works
-    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-    let mut x: Box<i32> = Box::new(10);
+    heap::init_heap(&mut mapper, &mut boot_frame_allocator).expect("heap initialization failed");
+    let x: Box<i32> = Box::new(10);
     let y: Box<i32> = Box::new(20);
     let z: Box<i32> = Box::new(30);
     serial_println!(
@@ -138,37 +143,35 @@ extern "C" fn kmain() -> ! {
         Box::as_ref(&z) as *const i32
     );
 
-    // should trigger page fault and panic
-    unsafe {
-        *x = 42; // Guaranteed to page fault
-    }
-
-    let mut bitmap_allocator: BitmapFrameAllocator = unsafe {
-        BitmapFrameAllocator::init(memory_map_response, frame_allocator.allocated_frames())
+    // switch over to "smart" frame_allocator
+    let mut frame_allocator: BitmapFrameAllocator = unsafe {
+        BitmapFrameAllocator::init(memory_map_response, boot_frame_allocator.allocated_frames())
     };
-
 
     let alloc_dealloc_addr = VirtAddr::new(0x12515);
     let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
-    paging::create_mapping(new_page, &mut mapper, &mut bitmap_allocator);
-    let phys = mapper.translate_addr(alloc_dealloc_addr).expect("Translation failed");
+    paging::create_mapping(new_page, &mut mapper, &mut frame_allocator);
+    let phys = mapper
+        .translate_addr(alloc_dealloc_addr)
+        .expect("Translation failed");
+
     serial_println!(
         "{:?} -> {:?}, and the frame is {}",
         alloc_dealloc_addr,
         phys,
-        bitmap_allocator.is_frame_used(PhysFrame::containing_address(phys))
+        frame_allocator.is_frame_used(PhysFrame::containing_address(phys))
     );
-    serial_println!("Now unmapping the page");
-    paging::remove_mapping(new_page, &mut mapper, &mut bitmap_allocator);
-    mapper.translate_addr(alloc_dealloc_addr).expect("Translation failed");
 
-    // let addresses = [
-    //     0x236262
-    // ];
-    // for &address in &addresses {
-    //     let phys = mapper.translate_addr(VirtAddr::new(address));
-    //     serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
-    // }
+    serial_println!("Now unmapping the page");
+    paging::remove_mapping(new_page, &mut mapper, &mut frame_allocator);
+    match mapper.translate_addr(alloc_dealloc_addr) {
+        Some(phys_addr) => {
+            serial_println!("Mapping still exists at physical address: {:?}", phys_addr);
+        }
+        None => {
+            serial_println!("Translation failed, as expected");
+        }
+    }
 
     serial_println!("BSP entering idle loop");
     idle_loop();

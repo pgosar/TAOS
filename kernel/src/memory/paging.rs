@@ -1,9 +1,9 @@
 use x86_64::{
-    structures::paging::{FrameAllocator, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable, Size4KiB},
+    structures::paging::{
+        FrameAllocator, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable, Size4KiB,
+    },
     VirtAddr,
 };
-
-use super::frame_allocator;
 
 /// initializes vmem system. activates pml4 and sets up page tables
 pub unsafe fn init(hhdm_base: VirtAddr) -> OffsetPageTable<'static> {
@@ -48,9 +48,7 @@ pub fn remove_mapping(
     mapper: &mut OffsetPageTable,
     frame_deallocator: &mut impl FrameDeallocator<Size4KiB>,
 ) {
-    let unmap_result = unsafe {
-        mapper.unmap(page)
-    };
+    let unmap_result = mapper.unmap(page);
 
     let (frame, flush) = unmap_result.expect("map_to failed");
 
