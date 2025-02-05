@@ -19,6 +19,8 @@ extern crate alloc;
 use alloc::boxed::Box;
 use taos::memory::allocator;
 
+use taos::events::event; // ASYNC
+
 #[used]
 #[link_section = ".requests"]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
@@ -49,6 +51,16 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 static BOOT_COMPLETE: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
+
+ // ASYNC
+async fn test_value() -> u32 {
+    17
+}
+
+async fn test_event() {
+    let tv = test_value().await;
+    serial_println!("Event result: {}", tv);
+}
 
 #[no_mangle]
 extern "C" fn kmain() -> ! {
@@ -141,6 +153,11 @@ extern "C" fn kmain() -> ! {
     //unsafe {
     //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
     //}
+
+    // ASYNC
+    let mut runner = event::EventRunner::init();
+    runner.enqueue(event::Event::init(test_event()));
+    runner.run();
 
     serial_println!("BSP entering idle loop");
     idle_loop();
