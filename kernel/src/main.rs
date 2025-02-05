@@ -2,18 +2,18 @@
 #![no_main]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use limine::smp::Cpu;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, SmpRequest, RequestsEndMarker,
-    RequestsStartMarker,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
+    SmpRequest,
 };
 use limine::response::MemoryMapResponse;
+use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::devices::pci::walk_pci_bus;
-use taos::devices::sd_card::{find_sd_card, initalize_sd_card};
+use taos::devices::sd_card::{find_sd_card, initalize_sd_card, read_sd_card, SDCardInfo};
 use taos::interrupts::{gdt, idt};
 use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
-use taos::{idle_loop, serial_println};
+use taos::{debug_println, idle_loop, serial_println};
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
 
@@ -118,11 +118,18 @@ extern "C" fn kmain() -> ! {
     }
 
     let devices = walk_pci_bus();
-    match find_sd_card(&devices) {
-        None => (),
+    let _sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
+        None => Option::None,
         Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator),
-    }
+    };
 
+    if _sd_card_struct.is_some() {
+        let data = read_sd_card(&_sd_card_struct.unwrap(), 0);
+        match data {
+            None => serial_println!("Failed to read data"),
+            Some(data_actual) => serial_println!("Read data as {data_actual:?}")
+        }
+    }
     // should trigger page fault and panic
     //unsafe {
     //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault

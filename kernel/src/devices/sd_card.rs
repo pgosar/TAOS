@@ -1,3 +1,4 @@
+use core::time;
 
 use x86_64::{
     structures::paging::{OffsetPageTable, Page, PhysFrame},
@@ -12,8 +13,18 @@ use crate::{
     },
     memory::{frame_allocator::BootIntoFrameAllocator, paging},
 };
+use bitflags::bitflags;
 
 use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
+
+
+#[derive(Clone, Copy, Debug)]
+pub struct SDCardInfo {
+    device_info: DeviceInfo,
+    cababilities: u64,
+    base_address_register: u64,
+    version: u8
+}
 
 const SD_CLASS_CODE: u8 = 0x8;
 const SD_SUB_CLASS: u8 = 0x5;
@@ -43,7 +54,7 @@ pub fn initalize_sd_card(
     sd_card: &DeviceInfo,
     mapper: &mut OffsetPageTable,
     frame_allocator: &mut BootIntoFrameAllocator,
-) {
+) -> Option<SDCardInfo> {
     // Lets assume 1 slot, and it uses BAR 1
 
     let command = sd_card.command & !(COMMAND_MEMORY_SPACE);
@@ -67,20 +78,165 @@ pub fn initalize_sd_card(
 
     // Weve mapped stuff to physcial memory, mAYBE
     // Wait for stuff to initalize
+    let capablities = unsafe { core::ptr::read_volatile((bar_address + 0x40) as *const u64) };
+    debug_println!("Capablities = 0x{capablities:X}");
+    let version_address = (bar_address + 0xFE) as *const u16;
+    
+    let mut version_data = unsafe { core::ptr::read_volatile(version_address) };
+    debug_println!("Version Data = 0x{version_data:X}");
+    version_data &= 0xFF;
 
-    loop {
-        let block_count = unsafe {core::ptr::read_volatile((bar_address + 0x28) as *const u8)};
-        if block_count != 0 {
-            break;
-        }
-
-        core::hint::spin_loop();
+    // Need to reset card
+    // Voltage check
+    //
+    let info = SDCardInfo {
+        device_info: sd_card.clone(),
+        cababilities: capablities,
+        base_address_register: bar_address,
+        version: version_data.try_into().expect("Should have masked out upper byte")
+    };
+    
+    let reset_successfull = reset_sd_card(&info);
+    match reset_successfull {
+        Err(_) => return Option::None,
+        Ok(_) => (),
     }
 
-    let host_control_2_ptr = (bar_address + 0x3E) as *const u16;
-    
-    let hc2_data = unsafe {
-        core::ptr::read_volatile(host_control_2_ptr)
-    };
-    debug_println!("Hc2_data = 0x{hc2_data:X}");
+    debug_println!("Base clock: 0x{}", (capablities & 0xFFFF)>> 8 );
+
+    return Option::Some(info);
 }
+
+
+
+#[derive(Debug)]
+struct SDTimeout;
+
+
+fn reset_sd_card(
+    sd_card: &SDCardInfo,
+) -> Result<(), SDTimeout>{
+    // DIsable all interupts 
+    let normal_intr_enable_addr = (sd_card.base_address_register + 0x38) as *mut u16;
+    unsafe { core::ptr::write_volatile(normal_intr_enable_addr, 0) };
+
+    // Use reset register
+    let reset_addr = (sd_card.base_address_register + 0x2f) as *mut u8;
+    unsafe { core::ptr::write_volatile(reset_addr, 1) };
+
+    // Wait for reset to set in TODO: Remove spin
+    let mut finished = false;
+    for _ in 0..5_000_000 {
+        let reset_taken = unsafe { core::ptr::read_volatile(reset_addr) };
+        if reset_taken & 1 == 0 {
+            finished = true;
+            break;
+        }
+    }
+    if !finished {
+        return Result::Err(SDTimeout);
+    }
+
+    // Set timeouts to the max value
+    let timeout_addr = (sd_card.base_address_register + 0x2e) as *mut u8;
+    unsafe { core::ptr::write_volatile(timeout_addr, 0b1110) };
+
+    // Re-enable interrupts
+
+    let normal_intr_status_addr = (sd_card.base_address_register + 0x34) as *mut u16;
+    unsafe { core::ptr::write_volatile(normal_intr_status_addr, 0xFF )};
+    let error_intr_status_addr = (sd_card.base_address_register + 0x36) as *mut u16;
+    unsafe { core::ptr::write_volatile(error_intr_status_addr, 0xFFF )};
+    unsafe { core::ptr::write_volatile(normal_intr_enable_addr, 0xFF )};
+    let error_intr_enable_addr = (sd_card.base_address_register + 0x40) as *mut u16;
+    unsafe { core::ptr::write_volatile(error_intr_enable_addr, 0xFFF )};
+
+    return Result::Ok(());
+    // Re-enable interrupts
+}
+
+#[derive(Debug)]
+struct CommandInhibited;
+
+fn send_sd_command(
+    sd_card: &SDCardInfo,
+    command_idx: u8,
+    respone_type: u8,
+    index_check: bool,
+    crc_check: bool,
+    wait: bool
+) -> Result<(), CommandInhibited> {
+    assert!(command_idx < 64);
+    assert!(respone_type < 4);
+    let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
+
+    let present_state = unsafe { core::ptr::read_volatile(present_state_register_addr) };
+    if present_state & 0x3 != 0 {
+        return Result::Err(CommandInhibited);
+    }
+
+    let command_register_addr = (sd_card.base_address_register + 0xE) as *mut u16;
+    let mut command: u16 = command_idx.into();
+    command <<= 8;
+    let index_check_int: u16 = index_check.into();
+    command |= index_check_int << 4;
+    let crc_check_int: u16 = crc_check.into();
+    command |= crc_check_int << 3;
+    let response_type_extended: u16 = respone_type.into();
+    command |= response_type_extended;
+    unsafe { core::ptr::write_volatile(command_register_addr, command) };
+    if wait {
+    let interrupt_status_register = (sd_card.base_address_register + 0x30) as *mut u16;
+    loop {
+        unsafe {
+            let mut command_done = core::ptr::read_volatile(interrupt_status_register);
+            if (command_done & 1) == 1 {
+                command_done &= 0xFFFE;
+                core::ptr::write_volatile(interrupt_status_register, command_done);
+                return Result::Ok(());
+            }
+        }
+    }
+    }
+    return Result::Ok(());
+}
+
+bitflags! {
+    pub struct TransferModeFlags: u16 {
+        const ResponseInterruptDisable = 1 << 8;
+        const ResponseErrorChecKEnable = 1 << 7;
+        const ResponseTypeSDIO = 1 << 6;
+        const MultipleBlockSelect = 1 << 5;
+        const WriteToCard = 1 << 4;
+        const BlockCountEnable = 1 << 1;
+        const DMAEnable = 1;
+    }
+}
+
+pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Option<[u8; 512]> {
+    let block_size_register_addr = (sd_card.base_address_register + 0x4) as *mut u16;
+    unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };
+    let block_count_register_addr = (sd_card.base_address_register + 0x6) as *mut u16;
+    unsafe { core::ptr::write_volatile(block_count_register_addr, 1) };
+
+    let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
+    unsafe { core::ptr::write_volatile(argument_register_addr, block) };
+    let transfer_mode_register_adder = (sd_card.base_address_register + 0xC) as *mut u16;
+    unsafe {
+        core::ptr::write_volatile(
+            transfer_mode_register_adder,
+            (TransferModeFlags::ResponseErrorChecKEnable).bits(),
+        )
+    };
+
+    // Send command
+    debug_println!("Before sending cmd 57");
+    let success = send_sd_command(&sd_card, 57, 0b10, true, true, false);
+    if success.is_err() {
+        debug_println!("it failed");
+        return Option::None;
+    }
+
+    return Option::None;
+}
+                

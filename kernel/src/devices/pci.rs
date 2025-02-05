@@ -12,6 +12,7 @@ pub const COMMAND_BUS_MASTER: u16 = 0x1 << 2;
 pub const COMMAND_MEMORY_SPACE: u16 = 0x1 << 1;
 pub const COMMAND_IO_SPACE: u16 = 0x1;
 
+#[derive(Clone, Copy, Debug)]
 pub struct DeviceInfo {
     pub bus: u8,
     pub device: u8,
