@@ -61,7 +61,7 @@ impl BootIntoFrameAllocator {
     }
 
     /// Debug function to print allocated_frames
-    pub fn print_allocated_frames(&self) -> () {
+    pub fn print_allocated_frames(&self) {
         serial_println!("Number of frames allocated: {}", self.allocated_count);
         for frame in self.allocated_frames() {
             serial_println!("Frame at: {:?}", frame.start_address());

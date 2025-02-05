@@ -39,9 +39,9 @@ impl BitmapFrameAllocator {
 
         serial_println!("The top of physmem is: {}", { true_end });
 
-        let total_frames = (true_end + FRAME_SIZE - 1) / FRAME_SIZE;
+        let total_frames = true_end.div_ceil(FRAME_SIZE);
 
-        let bitmap_size = (total_frames + BITMAP_ENTRY_SIZE - 1) / BITMAP_ENTRY_SIZE;
+        let bitmap_size = total_frames.div_ceil(BITMAP_ENTRY_SIZE);
 
         serial_println!("The bitmap size in bytes is: {}", { bitmap_size });
 
@@ -57,7 +57,7 @@ impl BitmapFrameAllocator {
         for entry in memory_map.entries().iter() {
             if entry.entry_type == EntryType::USABLE {
                 allocator.free_region(entry.base as usize, entry.length as usize);
-                allocator.free_frames += (entry.length as usize + FRAME_SIZE - 1) / FRAME_SIZE;
+                allocator.free_frames += (entry.length as usize).div_ceil(FRAME_SIZE);
             }
         }
 
