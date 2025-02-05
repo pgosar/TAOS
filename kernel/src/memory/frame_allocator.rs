@@ -5,8 +5,6 @@ use x86_64::{
     PhysAddr,
 };
 
-use crate::debug_println;
-
 pub struct BootIntoFrameAllocator {
     memory_map: &'static MemoryMapResponse,
     next: usize,

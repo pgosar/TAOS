@@ -1,5 +1,3 @@
-use core::time;
-
 use x86_64::{
     structures::paging::{OffsetPageTable, Page, PhysFrame},
     PhysAddr, VirtAddr,
@@ -7,10 +5,7 @@ use x86_64::{
 
 use crate::{
     debug_println,
-    devices::pci::{
-        write_pci_command, write_pci_data, COMMAND_BUS_MASTER, COMMAND_IO_SPACE,
-        COMMAND_MEMORY_SPACE,
-    },
+    devices::pci::{write_pci_command, COMMAND_MEMORY_SPACE},
     memory::{frame_allocator::BootIntoFrameAllocator, paging},
 };
 use bitflags::bitflags;
@@ -31,13 +26,27 @@ enum SDCardError {
     SDTimeout,
 }
 
+bitflags! {
+    pub struct TransferModeFlags: u16 {
+        const ResponseInterruptDisable = 1 << 8;
+        const ResponseErrorChecKEnable = 1 << 7;
+        const ResponseTypeSDIO = 1 << 6;
+        const MultipleBlockSelect = 1 << 5;
+        const WriteToCard = 1 << 4;
+        const BlockCountEnable = 1 << 1;
+        const DMAEnable = 1;
+    }
+}
+
 const SD_CLASS_CODE: u8 = 0x8;
 const SD_SUB_CLASS: u8 = 0x5;
 const SD_NO_DMA_INTERFACE: u8 = 0x0;
 const SD_DMA_INTERFACE: u8 = 0x1;
 const SD_VENDOR_UNIQUE_INTERFACE: u8 = 0x2;
 
-/// Finds the device that represents an SD card. It must support DMA
+/// Finds the device that represents an SD card. It must support DMA, even
+/// if the current driver does not support DMA. If the SD card was not found
+/// returns Option::None, but if the card was cound, returns the SD card
 pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
     for possible_device in &devices.device_info {
         match possible_device {
@@ -55,6 +64,7 @@ pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
     return Option::None;
 }
 
+/// Sets up an sd card
 pub fn initalize_sd_card(
     sd_card: &DeviceInfo,
     mapper: &mut OffsetPageTable,
@@ -200,18 +210,7 @@ fn send_sd_command(
     return Result::Ok(());
 }
 
-bitflags! {
-    pub struct TransferModeFlags: u16 {
-        const ResponseInterruptDisable = 1 << 8;
-        const ResponseErrorChecKEnable = 1 << 7;
-        const ResponseTypeSDIO = 1 << 6;
-        const MultipleBlockSelect = 1 << 5;
-        const WriteToCard = 1 << 4;
-        const BlockCountEnable = 1 << 1;
-        const DMAEnable = 1;
-    }
-}
-
+/// Reads data from a sd card
 pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Option<[u8; 512]> {
     let block_size_register_addr = (sd_card.base_address_register + 0x4) as *mut u16;
     unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };

@@ -13,7 +13,7 @@ use taos::devices::pci::walk_pci_bus;
 use taos::devices::sd_card::{find_sd_card, initalize_sd_card, read_sd_card, SDCardInfo};
 use taos::interrupts::{gdt, idt};
 use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
-use taos::{debug_println, idle_loop, serial_println};
+use taos::{idle_loop, serial_println};
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
 
