@@ -48,11 +48,7 @@ pub fn create_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
 }
 
 pub fn remove_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
-    let unmap_result = mapper.unmap(page);
-
-    let (frame, flush) = unmap_result.expect("map_to failed");
-
+    let (frame, flush) = mapper.unmap(page).expect("map_to failed");
     dealloc_frame(frame);
-
     flush.flush();
 }
