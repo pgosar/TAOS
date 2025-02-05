@@ -10,7 +10,9 @@ use limine::response::MemoryMapResponse;
 use limine::smp::Cpu;
 use limine::BaseRevision;
 use taos::devices::pci::walk_pci_bus;
-use taos::devices::sd_card::{find_sd_card, initalize_sd_card, read_sd_card, SDCardInfo};
+use taos::devices::sd_card::{
+    find_sd_card, initalize_sd_card, read_sd_card, write_sd_card, SDCardInfo,
+};
 use taos::interrupts::{gdt, idt};
 use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
 use taos::{idle_loop, serial_println};
@@ -123,7 +125,9 @@ extern "C" fn kmain() -> ! {
         Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator),
     };
 
+    let data_to_write: [u32; 128] = [255; 128];
     if _sd_card_struct.is_some() {
+        write_sd_card(&_sd_card_struct.unwrap(), 0, data_to_write).unwrap();
         let data = read_sd_card(&_sd_card_struct.unwrap(), 0);
         match data {
             None => serial_println!("Failed to read data"),
