@@ -53,12 +53,20 @@ static BOOT_COMPLETE: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 
  // ASYNC
-async fn test_value() -> u32 {
-    17
+async fn test_sum() -> u64 {
+    let mut sum: u64 = 0;
+    const MAX: u64 = 100000000;
+    for i in 0..MAX {
+        sum += i;
+        if i == MAX/2 {
+            serial_println!("Halfway through event");
+        }
+    }
+    sum
 }
 
 async fn test_event() {
-    let tv = test_value().await;
+    let tv = test_sum().await;
     serial_println!("Event result: {}", tv);
 }
 
@@ -156,7 +164,7 @@ extern "C" fn kmain() -> ! {
 
     // ASYNC
     let mut runner = event::EventRunner::init();
-    runner.enqueue(event::Event::init(test_event()));
+    runner.schedule(event::Event::init(test_event()));
     runner.run();
 
     serial_println!("BSP entering idle loop");
