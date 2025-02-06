@@ -7,10 +7,11 @@ use limine::request::{
     SmpRequest,
 };
 use limine::response::MemoryMapResponse;
-use limine::smp::Cpu;
+use limine::smp::{Cpu, RequestFlags};  // Combining both branches
 use limine::BaseRevision;
-use taos::interrupts::{gdt, idt};
-use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
+use taos::constants::x2apic::CPU_FREQUENCY;  // Added from x2apic branch
+use taos::interrupts::{gdt, idt, x2apic};  // Keeping both `idt` and `x2apic`
+use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};  // Keeping `frame_allocator` and `paging`
 use taos::{idle_loop, serial_println};
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
@@ -37,7 +38,7 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
 #[link_section = ".requests"]
-static SMP_REQUEST: SmpRequest = SmpRequest::new();
+static SMP_REQUEST: SmpRequest = SmpRequest::new().with_flags(RequestFlags::X2APIC);
 
 #[used]
 #[link_section = ".requests_start_marker"]
@@ -55,8 +56,10 @@ extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     serial_println!("Booting BSP...");
+
     gdt::init(0);
     idt::init_idt(0);
+    x2apic::init_bsp(CPU_FREQUENCY).expect("Failed to configure x2APIC");
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -151,6 +154,8 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     CPU_COUNT.fetch_add(1, Ordering::SeqCst);
     gdt::init(cpu.id);
     idt::init_idt(cpu.id);
+    x2apic::init_ap().expect("Failed to initialize core APIC");
+
     serial_println!("AP {} initialized", cpu.id);
 
     while !BOOT_COMPLETE.load(Ordering::SeqCst) {
