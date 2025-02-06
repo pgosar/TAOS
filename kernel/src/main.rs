@@ -122,9 +122,9 @@ extern "C" fn kmain() -> ! {
     let devices = walk_pci_bus();
     let _sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
         None => Option::None,
-        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator),
+        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator).ok(),
     };
-
+    _sd_card_struct.unwrap();
     let data_to_write: [u32; 128] = [255; 128];
     if _sd_card_struct.is_some() {
         write_sd_card(&_sd_card_struct.unwrap(), 0, data_to_write).unwrap();
