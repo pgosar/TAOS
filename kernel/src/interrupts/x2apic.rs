@@ -1,277 +1,258 @@
-use x2apic::lapic::{xapic_base, IpiDestMode, LocalApicBuilder, TimerDivide, TimerMode};
+use raw_cpuid::CpuId;
 use x86_64::instructions::port::Port;
+use x86_64::registers::model_specific::Msr;
 
-use crate::serial_print;
-
-#[derive(Debug)]
-pub enum ApicError {
-    TimerOverflow,
-    CalibrationFailed,
-    ApicInitFailed,
-    PitTimeout,
-}
+// MSR register constants
+const IA32_APIC_BASE_MSR: u32 = 0x1B;
+const X2APIC_EOI: u32 = 0x80B;
+const X2APIC_SIVR: u32 = 0x80F;
+const X2APIC_TPR: u32 = 0x808;
+const X2APIC_ID: u32 = 0x802;
+const X2APIC_ICR: u32 = 0x830;
+const X2APIC_LVT_TIMER: u32 = 0x832;
+const X2APIC_TIMER_ICR: u32 = 0x838;
+const X2APIC_TIMER_CCR: u32 = 0x839;
+const X2APIC_TIMER_DCR: u32 = 0x83E;
 
 // PIT constants
-const PIT_FREQ: u32 = 1193182;
-const CHANNEL_0: u16 = 0x40;
-const MODE_CMD: u16 = 0x43;
+const PIT_FREQUENCY: u64 = 1_193_182;
+const CHANNEL_2_PORT: u16 = 0x42;
+const COMMAND_PORT: u16 = 0x43;
+const CONTROL_PORT: u16 = 0x61;
 
-const TIMER_VECTOR: usize = 32;
-const ERROR_VECTOR: usize = 33;
-const SPURIOUS_VECTOR: usize = 0xFF;
+pub const TIMER_VECTOR: u8 = 32;
 
-const PIT_TICKS: u16 = 50;
-
-/// Initialize x2APIC for the current CPU
-pub fn init_x2apic() -> Result<(), ApicError> {
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(TIMER_VECTOR)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .timer_mode(TimerMode::Periodic)
-            .timer_divide(TimerDivide::Div2)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.enable();
-    }
-
-    Ok(())
+#[derive(Debug)]
+pub enum X2ApicError {
+    NotSupported,
+    NotEnabled,
+    EnableFailed,
+    InvalidVector,
+    ConfigurationFailed,
+    TimerError,
 }
 
-/// Signal end-of-interrupt
-#[inline(always)]
-pub fn eoi() -> Result<(), ApicError> {
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(TIMER_VECTOR)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.end_of_interrupt();
-    }
-    Ok(())
+#[derive(Debug)]
+pub enum PitError {
+    InvalidDuration,
+    CalibrationFailed,
 }
 
-/// Send IPI to target CPU
-#[inline]
-pub fn send_ipi(vector: u8, target_cpu: u32) -> Result<(), ApicError> {
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(TIMER_VECTOR)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .ipi_destination_mode(IpiDestMode::Physical)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
+pub struct X2Apic {
+    enabled: bool,
+}
 
-    unsafe {
-        lapic.send_ipi(vector, target_cpu);
-        // Wait for delivery
-        while lapic.get_ipi_delivery_status() {
-            core::hint::spin_loop();
+impl X2Apic {
+    fn read_msr(reg: u32) -> u64 {
+        unsafe { Msr::new(reg).read() }
+    }
+
+    fn write_msr(reg: u32, value: u64) {
+        unsafe { Msr::new(reg).write(value) }
+    }
+
+    pub fn new() -> Result<Self, X2ApicError> {
+        let cpuid = CpuId::new();
+        if !cpuid.get_feature_info().map_or(false, |f| f.has_x2apic()) {
+            return Err(X2ApicError::NotSupported);
         }
+        Ok(Self { enabled: false })
     }
 
-    Ok(())
-}
-
-struct Pit {
-    channel0: Port<u8>,
-    mode_cmd: Port<u8>,
-}
-
-impl Pit {
-    const fn new() -> Self {
-        Self {
-            channel0: Port::new(CHANNEL_0),
-            mode_cmd: Port::new(MODE_CMD),
+    pub fn enable(&mut self) -> Result<(), X2ApicError> {
+        if self.enabled {
+            return Ok(());
         }
+
+        let value = Self::read_msr(IA32_APIC_BASE_MSR);
+        Self::write_msr(IA32_APIC_BASE_MSR, value | (1 << 11) | (1 << 10));
+
+        let new_value = Self::read_msr(IA32_APIC_BASE_MSR);
+        if (new_value & ((1 << 11) | (1 << 10))) != ((1 << 11) | (1 << 10)) {
+            return Err(X2ApicError::EnableFailed);
+        }
+
+        self.enabled = true;
+        self.init_default_config()
     }
 
-    unsafe fn configure_for_calibration(&mut self, count: u16) -> Result<(), ApicError> {
-        // Channel 0, access mode LSB/MSB, mode 2 (rate generator)
-        self.mode_cmd.write(0x34);
+    fn init_default_config(&self) -> Result<(), X2ApicError> {
+        Self::write_msr(X2APIC_SIVR, 0xFF | (1 << 8));
+        Self::write_msr(X2APIC_TPR, 0);
+        Ok(())
+    }
 
-        // Write count value - LSB first, then MSB
-        self.channel0.write((count & 0xFF) as u8);
-        self.channel0.write((count >> 8) as u8);
+    pub fn send_eoi(&self) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+        Self::write_msr(X2APIC_EOI, 0);
+        Ok(())
+    }
+
+    pub fn get_id(&self) -> Result<u32, X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+        Ok(Self::read_msr(X2APIC_ID) as u32)
+    }
+
+    pub fn send_ipi(&self, target_id: u32, vector: u8) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+
+        if vector < 16 {
+            return Err(X2ApicError::InvalidVector);
+        }
+
+        let value = ((target_id as u64) << 32) | vector as u64;
+        Self::write_msr(X2APIC_ICR, value);
+        Ok(())
+    }
+
+    pub fn configure_timer(&mut self, hz: u32) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+
+        let mut pit = Pit::new();
+        let counter = pit
+            .calibrate_apic_timer(hz, self)
+            .map_err(|_| X2ApicError::TimerError)?;
+
+        // Configure timer: Periodic mode (1 << 17), unmasked (0 << 16), vector 32
+        let timer_config = (1u64 << 17) | (TIMER_VECTOR as u64);
+        Self::write_msr(X2APIC_LVT_TIMER, timer_config);
+
+        // Set divider to 1 (value 0xB)
+        Self::write_msr(X2APIC_TIMER_DCR, 0xB);
+
+        self.set_timer_initial_count(counter)?;
 
         Ok(())
     }
 
-    unsafe fn read_count(&mut self) -> u16 {
-        // Latch count value command for channel 0
-        self.mode_cmd.write(0x00);
+    pub fn set_timer_initial_count(&self, count: u32) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
 
-        // Read count - LSB then MSB
-        let low = self.channel0.read() as u16;
-        let high = self.channel0.read() as u16;
-        (high << 8) | low
+        Self::write_msr(X2APIC_TIMER_ICR, count as u64);
+        Ok(())
     }
 
-    unsafe fn wait_for_completion(&mut self, original_count: u16) -> Result<(), ApicError> {
-        let mut prev_count = self.read_count();
-        let mut iterations = 0;
-        let mut total_ticks = 0;
+    pub fn read_timer_count(&self) -> Result<u32, X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
 
-        while iterations < 1000000 {
-            let current = self.read_count();
+        Ok(Self::read_msr(X2APIC_TIMER_CCR) as u32)
+    }
 
-            let ticks = if current > prev_count {
-                (prev_count as u32) + (0xFFFF - current as u32)
-            } else {
-                (prev_count - current) as u32
-            };
+    pub fn mask_timer_interrupts(&self) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+        Self::write_msr(
+            X2APIC_LVT_TIMER,
+            Self::read_msr(X2APIC_LVT_TIMER) | (1 << 16),
+        );
+        Ok(())
+    }
 
-            total_ticks += ticks;
+    pub fn unmask_timer_interrupts(&self) -> Result<(), X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+        Self::write_msr(
+            X2APIC_LVT_TIMER,
+            Self::read_msr(X2APIC_LVT_TIMER) & !(1 << 16),
+        );
+        Ok(())
+    }
 
-            if total_ticks >= original_count as u32 {
-                return Ok(());
+    pub fn read_svr(&self) -> Result<u64, X2ApicError> {
+        if !self.enabled {
+            return Err(X2ApicError::NotEnabled);
+        }
+        Ok(Self::read_msr(X2APIC_SIVR))
+    }
+}
+
+pub struct Pit {
+    channel_2: Port<u8>,
+    command: Port<u8>,
+    control: Port<u8>,
+}
+
+impl Pit {
+    pub fn new() -> Self {
+        Self {
+            channel_2: Port::new(CHANNEL_2_PORT),
+            command: Port::new(COMMAND_PORT),
+            control: Port::new(CONTROL_PORT),
+        }
+    }
+
+    pub fn calibrate_apic_timer(&mut self, hz: u32, apic: &mut X2Apic) -> Result<u32, PitError> {
+        // First configure x2APIC timer as oneshot and masked
+        apic.mask_timer_interrupts()
+            .map_err(|_| PitError::CalibrationFailed)?;
+
+        // Set divider to 1 (value 0xB)
+        unsafe { Msr::new(X2APIC_TIMER_DCR).write(0xB) };
+
+        // Set initial APIC count
+        let initial = u32::MAX;
+        apic.set_timer_initial_count(initial)
+            .map_err(|_| PitError::CalibrationFailed)?;
+
+        unsafe {
+            // Speaker off, gate on
+            self.control.write(1);
+
+            // Configure channel 2:
+            // 10 = channel 2
+            // 11 = lobyte/hibyte
+            // 011 = square wave
+            // 0 = binary counting
+            self.command.write(0b10110110);
+
+            // Write PIT divider
+            let pit_divider = PIT_FREQUENCY as u32 / 20;
+            if pit_divider > 0xFFFF {
+                return Err(PitError::InvalidDuration);
             }
 
-            prev_count = current;
-            iterations += 1;
-            core::hint::spin_loop();
+            self.channel_2.write((pit_divider & 0xFF) as u8);
+            self.channel_2.write((pit_divider >> 8) as u8);
+
+            // Count 40 changes (full second since square wave makes it twice as fast)
+            let mut last = self.control.read() & 0x20;
+            let mut changes = 0;
+
+            while changes < 40 {
+                let t = self.control.read() & 0x20;
+                if t != last {
+                    changes += 1;
+                    last = t;
+                }
+            }
+
+            // Stop the PIT
+            self.control.write(0);
         }
 
-        serial_print!("PIT timed out after {} iterations\n", iterations);
-        Err(ApicError::PitTimeout)
+        // Calculate how many APIC ticks occurred
+        let final_count = apic
+            .read_timer_count()
+            .map_err(|_| PitError::CalibrationFailed)?;
+        let diff = initial - final_count;
+
+        // Calculate counter needed for desired frequency
+        let apic_counter = diff / hz;
+
+        Ok(apic_counter)
     }
-}
-
-/// Calibrate the APIC timer using PIT
-/// Returns ticks per millisecond
-pub fn calibrate_apic_timer() -> Result<u32, ApicError> {
-    let mut pit = Pit::new();
-
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(TIMER_VECTOR)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .timer_mode(TimerMode::OneShot)
-            .timer_divide(TimerDivide::Div2)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.enable();
-        lapic.enable_timer();
-        lapic.set_timer_initial(0);
-
-        let pit_ticks = ((PIT_FREQ as u64 * PIT_TICKS as u64) / 1000) as u16;
-
-        pit.configure_for_calibration(pit_ticks)?;
-
-        lapic.set_timer_initial(u32::MAX);
-
-        pit.wait_for_completion(pit_ticks)?;
-
-        let elapsed = u32::MAX - lapic.timer_current();
-
-        let ticks_per_ms = elapsed / (PIT_TICKS as u32);
-
-        // Sanity check - expect between 1K and 1M ticks per millisecond
-        if ticks_per_ms < 1_000 || ticks_per_ms > 1_000_000 {
-            return Err(ApicError::CalibrationFailed);
-        }
-
-        // Reset PIT to a known good state
-        pit.mode_cmd.write(0x36); // Channel 0, LSB/MSB, mode 3
-        pit.channel0.write(0);
-        pit.channel0.write(0);
-
-        Ok(ticks_per_ms)
-    }
-}
-
-/// Configure timer for current CPU in periodic mode
-pub fn configure_cpu_timer(vector: u8, ms: u32, ticks_per_ms: u32) -> Result<(), ApicError> {
-    let ticks = ticks_per_ms
-        .checked_mul(ms)
-        .ok_or(ApicError::TimerOverflow)?;
-    serial_print!("Programming timer with {} ticks\n", ticks);
-
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(vector as usize)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .timer_mode(TimerMode::Periodic)
-            .timer_divide(TimerDivide::Div2)
-            .timer_initial(ticks)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.enable();
-        lapic.enable_timer();
-    }
-
-    Ok(())
-}
-
-/// Configure timer for current CPU in one-shot mode
-pub fn configure_oneshot_timer(vector: u8, ms: u32, ticks_per_ms: u32) -> Result<(), ApicError> {
-    let ticks = ticks_per_ms
-        .checked_mul(ms)
-        .ok_or(ApicError::TimerOverflow)?;
-
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(vector as usize)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .timer_mode(TimerMode::OneShot)
-            .timer_divide(TimerDivide::Div2)
-            .timer_initial(ticks)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.enable();
-        lapic.enable_timer();
-        lapic.set_timer_mode(TimerMode::OneShot);
-        lapic.set_timer_divide(TimerDivide::Div2);
-        lapic.set_timer_initial(ticks);
-    }
-
-    Ok(())
-}
-
-pub fn stop_cpu_timer() -> Result<(), ApicError> {
-    let mut lapic = unsafe {
-        LocalApicBuilder::new()
-            .set_xapic_base(xapic_base())
-            .timer_vector(TIMER_VECTOR)
-            .error_vector(ERROR_VECTOR)
-            .spurious_vector(SPURIOUS_VECTOR)
-            .build()
-            .map_err(|_| ApicError::ApicInitFailed)?
-    };
-
-    unsafe {
-        lapic.set_timer_initial(0);
-        lapic.disable_timer();
-    }
-
-    Ok(())
 }
