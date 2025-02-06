@@ -188,6 +188,11 @@ pub fn initalize_sd_card(
         Ok(_) => (),
     }
     // TODO: Set clock appropately (see Clock control (0x2c))
+    // Also look into Host control 2 Preset value enable
+    // But with preset value, check that it exists and is non-zero
+    // Look into Figure 2-29, for tuning
+
+
     // TODO: check that timeout orks
 
     // TODO: Not just in this function, check erorr interrupt status register
