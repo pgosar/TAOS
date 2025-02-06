@@ -130,8 +130,8 @@ extern "C" fn kmain() -> ! {
         write_sd_card(&_sd_card_struct.unwrap(), 0, data_to_write).unwrap();
         let data = read_sd_card(&_sd_card_struct.unwrap(), 0);
         match data {
-            None => serial_println!("Failed to read data"),
-            Some(data_actual) => serial_println!("Read data as {data_actual:?}"),
+            Err(_) => serial_println!("Failed to read data"),
+            Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
         }
     }
     // should trigger page fault and panic
