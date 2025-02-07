@@ -3,9 +3,15 @@ override MAKEFLAGS += -rR
 
 override IMAGE_NAME := taos
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+QEMU_MACHINE = -M q35,accel=kvm,dump-guest-core=off
+else
+QEMU_MACHINE = -M q35,accel=hvf
+endif
+
 # QEMU configuration
 QEMU := qemu-system-x86_64
-QEMU_MACHINE := -M q35,accel=kvm,dump-guest-core=off -singlestep
 QEMU_MEMORY := -m 4G
 QEMU_CPU := -smp 2 -cpu host,+x2apic,+invtsc
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
