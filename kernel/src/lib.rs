@@ -1,10 +1,12 @@
 #![feature(abi_x86_interrupt)]
 #![no_std]
+extern crate alloc;
 
 use x86_64::instructions::hlt;
 
 pub mod constants;
 pub mod devices;
+pub mod filesys;
 pub mod interrupts;
 pub mod memory;
 
