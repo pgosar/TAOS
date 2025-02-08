@@ -5,15 +5,16 @@ override IMAGE_NAME := taos
 
 # QEMU configuration
 QEMU := qemu-system-x86_64
-QEMU_MACHINE := -M q35
-QEMU_MEMORY := -m 2G
-QEMU_CPU := -smp 2
+QEMU_MACHINE := -M q35 #,accel=kvm,dump-guest-core=off -singlestep
+QEMU_MEMORY := -m 4G
+QEMU_CPU := -smp 2 -cpu Conroe-v1,+x2apic,+invtsc
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
+QEMU_GRAPHICS := -vga std
 QEMU_GDB := -s -S
 
 # Common QEMU flags groups
-QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO)
+QEMU_COMMON := $(QEMU_MACHINE) $(QEMU_MEMORY) $(QEMU_CPU) $(QEMU_NET) $(QEMU_AUDIO) $(QEMU_GRAPHICS)
 QEMU_UEFI := $(QEMU_COMMON) -drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on -drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd
 QEMU_BIOS := $(QEMU_COMMON)
 

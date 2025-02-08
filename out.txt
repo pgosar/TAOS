@@ -1,0 +1,174 @@
+/Library/Developer/CommandLineTools/usr/bin/make -C kernel
+RUSTFLAGS="-C relocation-model=static" cargo build --target x86_64-unknown-none --profile dev
+cp target/x86_64-unknown-none/debug/$(cd target/x86_64-unknown-none/debug && gfind -maxdepth 1 -perm -111 -type f) kernel
+rm -rf iso_root
+mkdir -p iso_root/boot
+cp -v kernel/kernel iso_root/boot/
+kernel/kernel -> iso_root/boot/kernel
+mkdir -p iso_root/boot/limine
+cp -v limine.conf iso_root/boot/limine/
+limine.conf -> iso_root/boot/limine/limine.conf
+mkdir -p iso_root/EFI/BOOT
+cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
+limine/limine-bios.sys -> iso_root/boot/limine/limine-bios.sys
+limine/limine-bios-cd.bin -> iso_root/boot/limine/limine-bios-cd.bin
+limine/limine-uefi-cd.bin -> iso_root/boot/limine/limine-uefi-cd.bin
+cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
+limine/BOOTX64.EFI -> iso_root/EFI/BOOT/BOOTX64.EFI
+cp -v limine/BOOTIA32.EFI iso_root/EFI/BOOT/
+limine/BOOTIA32.EFI -> iso_root/EFI/BOOT/BOOTIA32.EFI
+xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
+		-no-emul-boot -boot-load-size 4 -boot-info-table \
+		--efi-boot boot/limine/limine-uefi-cd.bin \
+		-efi-boot-part --efi-boot-image --protective-msdos-label \
+		iso_root -o taos.iso
+./limine/limine bios-install taos.iso
+rm -rf iso_root
+qemu-system-x86_64 -M q35 -m 4G -smp 2 -cpu Conroe-v1,+x2apic,+invtsc -netdev user,id=net0 -device virtio-net-pci,netdev=net0 -device intel-hda -device hda-duplex -vga std -drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on -drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd -cdrom taos.iso -boot d -nographic
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[2J[01;01H[01;01H[2J[01;01H[01;01HBooting BSP...
+Found frame buffer
+Detected 2 CPU cores
+All CPUs initialized
+AP 1 initialized
+AP 1 entering idle loop
+VirtAddr(0xb8000) -> Some(PhysAddr(0x2000))
+VirtAddr(0x201008) -> None
+The top of physmem is: 6442450944
+The bitmap size in bytes is: 24576
+new frame allocator set
+Allocator switched to bitmap allocator
+Heap object allocated at: 0x444444440410
+Heap object allocated at: 0x444444440428
+Heap object allocated at: 0x444444440440
+Mapping a new page
+VirtAddr(0x12515) -> PhysAddr(0x109515), and the frame is true
+Now unmapping the page
+Translation failed, as expected
+Bitmap frame allocator in use
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000ffd,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98350,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000fb8,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | SIGN_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98350,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+Halfway through event
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000ffd,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98350,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+Event result: 49999995000000
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000ff8,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98350,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000600,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | ZERO_FLAG | PARITY_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98270,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+Halfway through event
+timer
+InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80000ffd,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | INTERRUPT_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff80007ea98350,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}
+QEMU: Terminated
+
