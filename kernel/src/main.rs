@@ -7,18 +7,25 @@ use limine::request::{
     SmpRequest,
 };
 use limine::response::MemoryMapResponse;
-use limine::smp::{Cpu, RequestFlags};  // Combining both branches
+use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
-use taos::constants::x2apic::CPU_FREQUENCY;  // Added from x2apic branch
-use taos::interrupts::{gdt, idt, x2apic};  // Keeping both `idt` and `x2apic`
-use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};  // Keeping `frame_allocator` and `paging`
-use taos::{idle_loop, serial_println};
-use x86_64::structures::paging::{Page, Translate};
+use taos::constants::x2apic::CPU_FREQUENCY;
+use taos::interrupts::{gdt, idt, x2apic};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
 extern crate alloc;
 use alloc::boxed::Box;
-use taos::memory::allocator;
+
+use taos::{
+    idle_loop,
+    memory::{
+        boot_frame_allocator::BootIntoFrameAllocator,
+        frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
+        heap, paging,
+    },
+    serial_println,
+};
 
 #[used]
 #[link_section = ".requests"]
@@ -103,15 +110,19 @@ extern "C" fn kmain() -> ! {
 
     let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
 
-    // decide what frames we can allocate based on memmap
-    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
+    // create a basic frame allocator and set it globally
+    unsafe {
+        *FRAME_ALLOCATOR.lock() = Some(GlobalFrameAllocator::Boot(BootIntoFrameAllocator::init(
+            memory_map_response,
+        )));
+    }
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
 
-    paging::create_mapping(page, &mut mapper, &mut frame_allocator);
+    paging::create_mapping(page, &mut mapper);
 
     let addresses = [
         // the identity-mapped vga buffer page
@@ -123,7 +134,7 @@ extern "C" fn kmain() -> ! {
     }
 
     // testing that the heap allocation works
-    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    heap::init_heap(&mut mapper).expect("heap initialization failed");
     let x: Box<i32> = Box::new(10);
     let y: Box<i32> = Box::new(20);
     let z: Box<i32> = Box::new(30);
@@ -140,11 +151,55 @@ extern "C" fn kmain() -> ! {
         Box::as_ref(&z) as *const i32
     );
 
-    // should trigger page fault and panic
-    //unsafe {
-    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
-    //}
+    let alloc_dealloc_addr = VirtAddr::new(0x12515);
+    let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
+    serial_println!("Mapping a new page");
+    paging::create_mapping(new_page, &mut mapper);
 
+    let phys = mapper
+        .translate_addr(alloc_dealloc_addr)
+        .expect("Translation failed");
+    // A downside of the current approach is that it is difficult to get the
+    // specific methods that are a part of any allocator. Here is an example
+    // on how to do this.
+    {
+        let mut alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Bitmap(ref mut bitmap_alloc)) => {
+                serial_println!(
+                    "{:?} -> {:?}, and the frame is {}",
+                    alloc_dealloc_addr,
+                    phys,
+                    bitmap_alloc.is_frame_used(PhysFrame::containing_address(phys))
+                );
+            }
+            _ => panic!("Bitmap alloc expected here"),
+        }
+    }
+
+    serial_println!("Now unmapping the page");
+    paging::remove_mapping(new_page, &mut mapper);
+    match mapper.translate_addr(alloc_dealloc_addr) {
+        Some(phys_addr) => {
+            serial_println!("Mapping still exists at physical address: {:?}", phys_addr);
+        }
+        None => {
+            serial_println!("Translation failed, as expected");
+        }
+    }
+
+    {
+        let alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Boot(ref _boot_alloc)) => {
+                serial_println!("Boot frame allocator in use");
+            }
+            Some(GlobalFrameAllocator::Bitmap(ref _bitmap_alloc)) => {
+                serial_println!("Bitmap frame allocator in use");
+            }
+            _ => panic!("Unknown frame allocator"),
+        }
+    }
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
