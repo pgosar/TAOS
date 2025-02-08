@@ -2,3 +2,5 @@
 /ovmf
 *.iso
 *.hdd
+
+*zig*
