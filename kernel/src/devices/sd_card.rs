@@ -1,5 +1,3 @@
-use core::{char::MAX, error};
-
 use x86_64::{
     structures::paging::{OffsetPageTable, Page, PhysFrame},
     PhysAddr, VirtAddr,
@@ -7,7 +5,7 @@ use x86_64::{
 
 use crate::{
     debug_println,
-    devices::{pci::{write_pci_command, COMMAND_MEMORY_SPACE}, sd_card},
+    devices::pci::{write_pci_command, COMMAND_MEMORY_SPACE},
     memory::{frame_allocator::BootIntoFrameAllocator, paging},
 };
 use bitflags::bitflags;
@@ -15,6 +13,7 @@ use bitflags::bitflags;
 use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub struct SDCardInfo {
     device_info: DeviceInfo,
     cababilities: u64,
@@ -30,12 +29,14 @@ pub enum SDCardError {
 }
 
 /// No suppoort for R2 type responses
+#[allow(dead_code)]
 #[derive(Debug)]
 enum SDCommandResponse {
     NoResponse,
     Response32Bits(u32),
 }
 
+#[allow(dead_code)]
 enum SDResponseTypes {
     R1,
     R1b,
@@ -130,6 +131,7 @@ const SD_CLASS_CODE: u8 = 0x8;
 const SD_SUB_CLASS: u8 = 0x5;
 const SD_NO_DMA_INTERFACE: u8 = 0x0;
 const SD_DMA_INTERFACE: u8 = 0x1;
+#[allow(dead_code)]
 const SD_VENDOR_UNIQUE_INTERFACE: u8 = 0x2;
 const MAX_ITERATIONS: usize = 100;
 const SD_MAX_FREQUENCY_MHZ: u8 = 25;
@@ -221,7 +223,6 @@ pub fn initalize_sd_card(
     // TODO: Not just in this function, check erorr interrupt status register
     // TODO: Not in this function, deal with repeated code in read / write
 
-    // TODO: Make this a result
 
     return Result::Ok(info);
 }
@@ -232,92 +233,88 @@ fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     unsafe { core::ptr::write_volatile(normal_intr_enable_addr, 0) };
 
     // Use reset register
-    // let reset_addr = (sd_card.base_address_register + 0x2f) as *mut u8;
-    // unsafe { core::ptr::write_volatile(reset_addr, 1) };
+    let reset_addr = (sd_card.base_address_register + 0x2f) as *mut u8;
+    unsafe { core::ptr::write_volatile(reset_addr, 1) };
 
     // Wait for reset to set in TODO: Remove spin
-    // let mut finished = false;
-    // for _ in 0..MAX_ITERATIONS {
-    //     let reset_taken = unsafe { core::ptr::read_volatile(reset_addr) };
-    //     if reset_taken & 1 == 0 {
-    //         finished = true;
-    //         break;
-    //     }
-    //     core::hint::spin_loop();
-    // }
-    // if !finished {
-    //     debug_println!("Reset Failed");
-    //     return Result::Err(SDCardError::SDTimeout);
-    // }
+    let mut finished = false;
+    for _ in 0..MAX_ITERATIONS {
+        let reset_taken = unsafe { core::ptr::read_volatile(reset_addr) };
+        if reset_taken & 1 == 0 {
+            finished = true;
+            break;
+        }
+        core::hint::spin_loop();
+    }
+    if !finished {
+        debug_println!("Reset Failed");
+        return Result::Err(SDCardError::SDTimeout);
+    }
 
-    // Re-enable the clock
-    let base_clock: u8 = ((sd_card.cababilities >> 8) & 0xFF)
-        .try_into()
-        .expect("Masked out upper bits");
-    debug_println!("Base clock = {base_clock}");
+    // Turn power on
+
+    // Read capablities()
+    let power_controll_addr = (sd_card.base_address_register + 0x29) as *mut u8;
+    let mut power_control: u8 = ((sd_card.cababilities >> 24 ) & 0b111).try_into().expect("Trimmed out bits");
+    power_control <<= 1;
+    power_control |= 1;
+    unsafe { core::ptr::write_volatile(power_controll_addr, power_control) };
+    
+
+    // Determine Set Clock Frequency
+    let base_clock: u8 = ((sd_card.cababilities >> 8 ) & 0xFF).try_into().expect("Trimmed out bits");
+    // We need to ensure this is less than SD_MAX_FREQUENCY_MHZ
     let mut divisor = 1;
+    // TODO: fix error
+    let mut divisor_set = false;
     for _ in 0..8 {
-        if (base_clock / divisor) + 1 < SD_MAX_FREQUENCY_MHZ {
+        debug_println!("Base clock is {base_clock}");
+        let frequency = base_clock / divisor;
+        debug_println!("Divisor is {divisor}");
+        if frequency < SD_MAX_FREQUENCY_MHZ {
+            // Set Divisor
+            divisor_set = true;
             break;
         }
         divisor <<= 1;
     }
-    debug_println!("Divisor is {divisor}");
-    let mut divisor_extended: u16 = divisor.into();
-    divisor_extended <<= 8;
-    // Enable clock
-    divisor_extended |= 1;
-    divisor_extended |= 1 << 2;
-    let clock_controll_reg_addr = (sd_card.base_address_register + 0x2C) as *mut u16;
-    unsafe {
-        core::ptr::write_volatile(clock_controll_reg_addr, divisor_extended);
+    if !divisor_set {
+        // TODO: return better error
+        debug_println!("Reset did not take");
+        return Result::Err(SDCardError::SDTimeout)
     }
-    check_no_errors(sd_card)?;
-    // Weve reset, execute CMD 8
-    // Try setting voltage to 2.7-3.6V
-    let cmd_8_argument = 1 << 16;
-    let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
-    unsafe { core::ptr::write_volatile(argument_register_addr, cmd_8_argument) };
-    // Returns R7 type response
-    // TODO: should probally check responses?
-    let cmd_8_reposne = send_sd_command(
-        &sd_card,
-        8,
-        SDResponseTypes::R7,
-        CommandFlags::empty(),
-        false,
-    )?;
-    check_no_errors(sd_card)?;
-    debug_println!("CMD8 returned {cmd_8_reposne:?}");
 
-    // Execute CMD 5
+    let clock_ctrl_reg_addr =  (sd_card.base_address_register + 0x2c) as *mut u16;
+    // Disable clock
+    unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, 0) };
+    let mut clock_ctrl_reg:u16 = divisor.into();
+    clock_ctrl_reg <<= 8;
+    // clock_ctrl_reg |= 1 << 5;
 
-    let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
-    unsafe { core::ptr::write_volatile(argument_register_addr, 0) };
-    let cmd_5_reposne = send_sd_command(
-        &sd_card,
-        5,
-        SDResponseTypes::R4,
-        CommandFlags::empty(),
-        false,
-    )?;
-    check_no_errors(sd_card)?;
-    debug_println!("CMD5 returned {cmd_5_reposne:?}");
+    // Set clock to something
+    unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
+    // Enable internal clock
+    clock_ctrl_reg |= 1;
+    unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
+    // Wait for stability
+    let mut finished = false;
+    for _ in 0..MAX_ITERATIONS {
+        let clock_taken = unsafe { core::ptr::read_volatile(clock_ctrl_reg_addr) };
+        if clock_taken & 0b10 != 0 {
+            finished = true;
+            break;
+        }
+        core::hint::spin_loop();
+    }
+    if !finished {
+        debug_println!("Clock set Failed");
+        return Result::Err(SDCardError::SDTimeout);
+    }
 
+    // Send clock to SD 
+    clock_ctrl_reg |= 1 << 2;
+    unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
 
-    // Execute ACMD 41
-
-    let acmd_argument = 1 << 30 | 1 << 24;
-    unsafe { core::ptr::write_volatile(argument_register_addr, acmd_argument) };
-    let acmd_respone = send_sd_command(
-        &sd_card,
-        0b101001,
-        SDResponseTypes::R3,
-        CommandFlags::empty(),
-        true,
-    )?;
-    check_no_errors(sd_card)?;
-    debug_println!("ACMD returned 0x{acmd_respone:?}");
 
     // Set timeouts to the max value
     let timeout_addr = (sd_card.base_address_register + 0x2e) as *mut u8;
@@ -336,19 +333,11 @@ fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     let error_intr_enable_addr = (sd_card.base_address_register + 0x40) as *mut u16;
     unsafe { core::ptr::write_volatile(error_intr_enable_addr, 0xFFF) };
     let _ = check_valid_sd_card(sd_card)?;
-
-    // Dont use preset value, as the sd card we are simulating does
-    // Not have support for them
-    //
-    // let divisor = (base_clock / SD_MAX_FREQUENCY_MHZ)  + 1;
-    // // But divisor needs to be a power of 2
-    // let pow_divisor = (divisor.ilog2() + 1);
-    // debug_println!("Divisor = {divisor}");
-
     return Result::Ok(());
 }
 
 fn check_valid_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
+    check_no_errors(sd_card)?;
     let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
     let present_state = unsafe { core::ptr::read_volatile(present_state_register_addr) };
     let inhibited_state = PresentState::CommandInhibitCmd | PresentState::CommandInhibitData;
@@ -366,6 +355,7 @@ fn check_no_errors(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     let error_state = unsafe {core::ptr::read_volatile(error_state_intr_addr)};
     if error_state != 0 {
         debug_println!("Error detected 0x{error_state:x}");
+        // TODO: Give better error
         return Result::Err(SDCardError::CommandStoppedDueToError);
     }
 
@@ -382,7 +372,7 @@ fn send_sd_command(
     wait: bool,
 ) -> Result<SDCommandResponse, SDCardError> {
     assert!(command_idx < 64);
-    let _ = check_valid_sd_card(sd_card)?;
+    let _ = check_valid_sd_card(sd_card).unwrap();
 
     let command_register_addr = (sd_card.base_address_register + 0xE) as *mut u16;
     let mut command: u16 = command_idx.into();
@@ -409,9 +399,9 @@ fn send_sd_command(
     command |= myflags.bits();
     // let response_type_extended: u16 = respone_type.into();
     // command |= response_type_extended;
-    let _ = check_valid_sd_card(sd_card)?;
+    let _ = check_valid_sd_card(sd_card).unwrap();
     unsafe { core::ptr::write_volatile(command_register_addr, command) };
-    check_no_errors(sd_card)?;
+    check_no_errors(sd_card).unwrap();
     if wait {
         let interrupt_status_register = (sd_card.base_address_register + 0x30) as *mut u16;
         for _ in 0..MAX_ITERATIONS {
@@ -424,11 +414,11 @@ fn send_sd_command(
                 }
             }
         }
-        check_no_errors(sd_card)?;
+        check_no_errors(sd_card).unwrap();
         return Result::Err(SDCardError::SDTimeout);
     }
     let _ = check_valid_sd_card(sd_card)?;
-    check_no_errors(sd_card)?;
+    check_no_errors(sd_card).unwrap();
 
     let response_register = (sd_card.base_address_register + 0x10) as *const u32;
     match respone_type {
