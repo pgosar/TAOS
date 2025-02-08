@@ -7,7 +7,6 @@ pub mod block;
 pub mod fat16;
 pub mod vfs;
 
-// Define error types for the filesystem operations
 #[derive(Debug)]
 pub enum FsError {
     NotFound,
@@ -15,12 +14,11 @@ pub enum FsError {
     InvalidName,
     IOError,
     NotSupported,
-    // Add more error types as needed
+    InvalidOffset,
+    NoSpace,
+    DirectoryNotEmpty,
 }
 
-// Core traits for filesystem abstraction
-
-/// Represents a block device that can be read from and written to
 pub trait BlockDevice: Send + Sync {
     fn read_block(&self, block_num: u64, buf: &mut [u8]) -> Result<(), FsError>;
     fn write_block(&mut self, block_num: u64, buf: &[u8]) -> Result<(), FsError>;
@@ -30,21 +28,27 @@ pub trait BlockDevice: Send + Sync {
 
 /// Represents a file in the filesystem
 pub trait File {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, FsError>;
-    fn write(&mut self, buf: &[u8]) -> Result<usize, FsError>;
+    fn read_with_device(
+        &mut self,
+        device: &mut dyn BlockDevice,
+        buf: &mut [u8],
+    ) -> Result<usize, FsError>;
+    fn write_with_device(
+        &mut self,
+        device: &mut dyn BlockDevice,
+        buf: &[u8],
+    ) -> Result<usize, FsError>;
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, FsError>;
     fn flush(&mut self) -> Result<(), FsError>;
     fn size(&self) -> u64;
 }
 
-/// Represents a directory entry
 #[derive(Debug, Clone)]
 pub struct DirEntry {
     pub name: String,
     pub metadata: FileMetadata,
 }
 
-/// File metadata information
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     pub size: u64,
@@ -61,7 +65,6 @@ pub struct FilePermissions {
     pub executable: bool,
 }
 
-/// Seek positions for file operations
 pub enum SeekFrom {
     Start(u64),
     Current(i64),
@@ -69,12 +72,14 @@ pub enum SeekFrom {
 }
 
 /// The main filesystem trait that must be implemented by all filesystem types
-pub trait FileSystem: Send + Sync {
+pub trait FileSystem {
+    type File: File;
+
     fn create_file(&mut self, path: &str) -> Result<(), FsError>;
     fn create_dir(&mut self, path: &str) -> Result<(), FsError>;
     fn remove_file(&mut self, path: &str) -> Result<(), FsError>;
     fn remove_dir(&mut self, path: &str) -> Result<(), FsError>;
-    fn open_file(&mut self, path: &str) -> Result<Box<dyn File>, FsError>;
+    fn open_file(&mut self, path: &str) -> Result<Box<Self::File>, FsError>;
     fn read_dir(&self, path: &str) -> Result<Vec<DirEntry>, FsError>;
     fn metadata(&self, path: &str) -> Result<FileMetadata, FsError>;
     fn rename(&mut self, from: &str, to: &str) -> Result<(), FsError>;
