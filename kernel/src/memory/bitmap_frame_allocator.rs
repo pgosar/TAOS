@@ -30,6 +30,7 @@ impl BitmapFrameAllocator {
         let mut true_end: usize = 0;
         for entry in memory_map.entries().iter() {
             if entry.entry_type == EntryType::USABLE {
+                serial_println!("start addr {:#X}, size is {:#X}", entry.base, entry.length);
                 let end_addr = entry.base + entry.length;
                 if end_addr as usize > true_end {
                     true_end = end_addr as usize;
@@ -138,8 +139,10 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
             if !self.is_bit_set(self.to_allocate) {
                 self.set_bit(self.to_allocate);
                 let addr = self.to_allocate * FRAME_SIZE;
+                serial_println!("{:#X}", addr);
 
                 self.to_allocate = (self.to_allocate + 1) % self.total_frames;
+                serial_println!("{}", self.to_allocate);
 
                 return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
             }

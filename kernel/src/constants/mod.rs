@@ -4,4 +4,5 @@ pub mod gdt;
 pub mod idt;
 pub mod memory;
 pub mod ports;
+pub mod processes;
 pub mod x2apic;

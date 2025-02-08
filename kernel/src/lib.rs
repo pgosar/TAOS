@@ -7,6 +7,7 @@ pub mod constants;
 pub mod devices;
 pub mod interrupts;
 pub mod memory;
+pub mod processes;
 
 pub use devices::serial;
 

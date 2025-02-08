@@ -3,14 +3,15 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
-    SmpRequest,
+    FramebufferRequest, HhdmRequest, KernelAddressRequest, MemoryMapRequest, RequestsEndMarker,
+    RequestsStartMarker, SmpRequest,
 };
 use limine::response::MemoryMapResponse;
 use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::interrupts::{gdt, idt, x2apic};
+use taos::processes::loader::load_binary;
 use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
@@ -48,6 +49,10 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 static SMP_REQUEST: SmpRequest = SmpRequest::new().with_flags(RequestFlags::X2APIC);
 
 #[used]
+#[link_section = ".requests"]
+static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
+
+#[used]
 #[link_section = ".requests_start_marker"]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 
@@ -57,6 +62,10 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 static BOOT_COMPLETE: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
+
+extern "C" {
+    static _kernel_end: u64;
+}
 
 #[no_mangle]
 extern "C" fn kmain() -> ! {
@@ -100,6 +109,22 @@ extern "C" fn kmain() -> ! {
     serial_println!("All CPUs initialized");
 
     idt::enable();
+
+    let kernel_address_response = KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .expect("Kernel Address request failed");
+
+    let physical_kernel_address: u64 = kernel_address_response.physical_base();
+    let virtual_kernel_address: u64 = kernel_address_response.virtual_base();
+    serial_println!(
+        "Kernel physical base address: {:#X}, virtual base address: {:#X}",
+        physical_kernel_address,
+        virtual_kernel_address
+    );
+
+    unsafe {
+        serial_println!("virtual kernel end address: {:#X}", _kernel_end);
+    }
 
     // set up page tables
     // get hhdm offset
@@ -200,6 +225,13 @@ extern "C" fn kmain() -> ! {
             _ => panic!("Unknown frame allocator"),
         }
     }
+
+    // Load in a binary right after the kernel
+    unsafe {
+        let binary_address = load_binary(_kernel_end, &mut mapper);
+        //let entry: fn() -> ! = core::mem::transmute(binary_address);
+        //entry();
+    };
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
