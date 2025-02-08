@@ -1,1 +1,1 @@
-pub const MAX_EVENTS: u16 = 64;
+pub const MAX_EVENTS: usize = 64;

@@ -4,7 +4,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 
 use crate::constants::idt::TIMER_VECTOR;
 use crate::interrupts::x2apic;
-use crate::{prelude::*, serial};
+use crate::prelude::*;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -91,6 +91,6 @@ extern "x86-interrupt" fn page_fault_handler(
     //panic!("PAGE FAULT!");
 }
 
-extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn timer_handler(_: InterruptStackFrame) {
     x2apic::send_eoi();
 }

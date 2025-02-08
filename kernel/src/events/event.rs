@@ -1,5 +1,4 @@
 extern crate alloc;
-use alloc::collections::VecDeque;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
@@ -9,7 +8,9 @@ use core::{future::Future, pin::Pin};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use futures::future;
+use crossbeam_queue::ArrayQueue;
 
+use crate::constants::events::MAX_EVENTS;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,29 +49,40 @@ impl Wake for Event {
 }
 
 pub struct EventRunner {
-  event_queue: VecDeque<Event>,
+  event_queue: ArrayQueue<Event>,
 }
 
 impl EventRunner {
   pub fn init() -> EventRunner {
     EventRunner {
-      event_queue: VecDeque::new(),
+      event_queue: ArrayQueue::new(MAX_EVENTS),
     }
   }
 
   pub fn run(&mut self) {
-    while let Some(mut event) = self.event_queue.pop_front() {
+    while let Some(mut event) = self.event_queue.pop() {
       let waker = get_waker();
       let mut context = Context::from_waker(&waker);
       match event.poll(&mut context) {
-        Poll::Pending => {serial_println!("Pending {:?}", event.eid); self.event_queue.push_back(event)},
+        Poll::Pending => {
+          serial_println!("Pending {:?}", event.eid); 
+          let r = self.event_queue.push(event);
+          match r {
+            Err(_) => {serial_println!("Event queue full!")}
+            Ok(_) => (),
+          }
+        },
         Poll::Ready(()) => {serial_println!("Ready {:?}", event.eid);}
       }
     }
   }
 
   pub fn schedule(&mut self, future: impl Future<Output = ()> + 'static) {
-    self.event_queue.push_back(Event::init(future));
+    let r = self.event_queue.push(Event::init(future));
+    match r {
+      Err(_) => {serial_println!("Event queue full!")}
+      Ok(_) => (),
+    }
   }
 }
 
@@ -105,7 +117,6 @@ impl RandomFuture {
 
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
-use rand::RngCore;
 
 impl Future for RandomFuture {
 type Output = ();
@@ -127,7 +138,7 @@ fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 
 async fn rand_delay(arg1: u32) -> u32 {
   serial_println!("Awaiting random delay");
-  let foo = RandomFuture::new(0.3, (arg1).into());
+  let foo = RandomFuture::new(0.5, (arg1).into());
   foo.await;
   arg1
 }
