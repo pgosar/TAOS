@@ -127,8 +127,8 @@ extern "C" fn kmain() -> ! {
     _sd_card_struct.unwrap();
     let data_to_write: [u32; 128] = [255; 128];
     if _sd_card_struct.is_some() {
-        write_sd_card(&_sd_card_struct.unwrap(), 0, data_to_write).unwrap();
-        let data = read_sd_card(&_sd_card_struct.unwrap(), 0);
+        write_sd_card(&_sd_card_struct.unwrap(), 1, data_to_write).unwrap();
+        let data = read_sd_card(&_sd_card_struct.unwrap(), 1);
         match data {
             Err(_) => serial_println!("Failed to read data"),
             Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),

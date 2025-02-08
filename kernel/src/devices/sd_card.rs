@@ -5,7 +5,7 @@ use x86_64::{
 
 use crate::{
     debug_println,
-    devices::pci::{write_pci_command, COMMAND_MEMORY_SPACE},
+    devices::pci::{write_pci_command, COMMAND_BUS_MASTER, COMMAND_MEMORY_SPACE},
     memory::{frame_allocator::BootIntoFrameAllocator, paging},
 };
 use bitflags::bitflags;
@@ -188,7 +188,7 @@ pub fn initalize_sd_card(
             sd_card.bus,
             sd_card.device,
             0,
-            sd_card.command | COMMAND_MEMORY_SPACE,
+            sd_card.command | COMMAND_MEMORY_SPACE | COMMAND_BUS_MASTER,
         );
     }
 
@@ -223,16 +223,19 @@ pub fn initalize_sd_card(
     // TODO: Not just in this function, check erorr interrupt status register
     // TODO: Not in this function, deal with repeated code in read / write
 
-
     return Result::Ok(info);
 }
 
 fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
+    // TODO: Move into diffrent functions
+
     // DIsable all interupts
     let normal_intr_enable_addr = (sd_card.base_address_register + 0x38) as *mut u16;
     unsafe { core::ptr::write_volatile(normal_intr_enable_addr, 0) };
 
     // Use reset register
+
+    debug_println!("Resetting");
     let reset_addr = (sd_card.base_address_register + 0x2f) as *mut u8;
     unsafe { core::ptr::write_volatile(reset_addr, 1) };
 
@@ -250,19 +253,21 @@ fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
         debug_println!("Reset Failed");
         return Result::Err(SDCardError::SDTimeout);
     }
-
     // Turn power on
 
     // Read capablities()
     let power_controll_addr = (sd_card.base_address_register + 0x29) as *mut u8;
-    let mut power_control: u8 = ((sd_card.cababilities >> 24 ) & 0b111).try_into().expect("Trimmed out bits");
+    let mut power_control: u8 = ((sd_card.cababilities >> 24) & 0b111)
+        .try_into()
+        .expect("Trimmed out bits");
     power_control <<= 1;
     power_control |= 1;
     unsafe { core::ptr::write_volatile(power_controll_addr, power_control) };
-    
 
     // Determine Set Clock Frequency
-    let base_clock: u8 = ((sd_card.cababilities >> 8 ) & 0xFF).try_into().expect("Trimmed out bits");
+    let base_clock: u8 = ((sd_card.cababilities >> 8) & 0xFF)
+        .try_into()
+        .expect("Trimmed out bits");
     // We need to ensure this is less than SD_MAX_FREQUENCY_MHZ
     let mut divisor = 1;
     // TODO: fix error
@@ -281,13 +286,13 @@ fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     if !divisor_set {
         // TODO: return better error
         debug_println!("Reset did not take");
-        return Result::Err(SDCardError::SDTimeout)
+        return Result::Err(SDCardError::SDTimeout);
     }
 
-    let clock_ctrl_reg_addr =  (sd_card.base_address_register + 0x2c) as *mut u16;
+    let clock_ctrl_reg_addr = (sd_card.base_address_register + 0x2c) as *mut u16;
     // Disable clock
     unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, 0) };
-    let mut clock_ctrl_reg:u16 = divisor.into();
+    let mut clock_ctrl_reg: u16 = divisor.into();
     clock_ctrl_reg <<= 8;
     // clock_ctrl_reg |= 1 << 5;
 
@@ -311,10 +316,9 @@ fn reset_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
         return Result::Err(SDCardError::SDTimeout);
     }
 
-    // Send clock to SD 
+    // Send clock to SD
     clock_ctrl_reg |= 1 << 2;
     unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
-
 
     // Set timeouts to the max value
     let timeout_addr = (sd_card.base_address_register + 0x2e) as *mut u8;
@@ -341,10 +345,11 @@ fn check_valid_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
     let present_state = unsafe { core::ptr::read_volatile(present_state_register_addr) };
     let inhibited_state = PresentState::CommandInhibitCmd | PresentState::CommandInhibitData;
-    if inhibited_state.contains(PresentState::from_bits_retain(present_state)) {
+    if inhibited_state.intersects(PresentState::from_bits_retain(present_state)) {
         return Result::Err(SDCardError::CommandInhibited);
     }
     if PresentState::CommandNotIssuedError.contains(PresentState::from_bits_retain(present_state)) {
+        debug_println!("Present state = 0x{present_state:X}");
         return Result::Err(SDCardError::CommandStoppedDueToError);
     }
     return Result::Ok(());
@@ -352,7 +357,7 @@ fn check_valid_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
 
 fn check_no_errors(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     let error_state_intr_addr = (sd_card.base_address_register + 0x32) as *const u16;
-    let error_state = unsafe {core::ptr::read_volatile(error_state_intr_addr)};
+    let error_state = unsafe { core::ptr::read_volatile(error_state_intr_addr) };
     if error_state != 0 {
         debug_println!("Error detected 0x{error_state:x}");
         // TODO: Give better error
@@ -386,7 +391,7 @@ fn send_sd_command(
         SDResponseTypes::R3 | SDResponseTypes::R4 => {
             command |= 0b10;
         }
-        SDResponseTypes::R1 | SDResponseTypes::R5 => {
+        SDResponseTypes::R1 | SDResponseTypes::R5 | SDResponseTypes::R7 | SDResponseTypes::R6 => {
             command |= 0b10;
             myflags |= CommandFlags::CommandIndexCheckEnable | CommandFlags::CommandCRCCheckEnable;
         }
@@ -407,18 +412,20 @@ fn send_sd_command(
         for _ in 0..MAX_ITERATIONS {
             unsafe {
                 let mut command_done = core::ptr::read_volatile(interrupt_status_register);
+                // if command_done != 0 {
                 if (command_done & 1) == 1 {
                     command_done &= 0xFFFE;
                     core::ptr::write_volatile(interrupt_status_register, command_done);
                     return Result::Ok(SDCommandResponse::NoResponse);
+                } else if (command_done != 0) {
+                    debug_println!("Something happened 0x{command_done:X}")
                 }
             }
         }
         check_no_errors(sd_card).unwrap();
         return Result::Err(SDCardError::SDTimeout);
     }
-    let _ = check_valid_sd_card(sd_card)?;
-    check_no_errors(sd_card).unwrap();
+    check_valid_sd_card(sd_card)?;
 
     let response_register = (sd_card.base_address_register + 0x10) as *const u32;
     match respone_type {
@@ -431,7 +438,7 @@ fn send_sd_command(
         | SDResponseTypes::R6 => {
             let response = unsafe { core::ptr::read_volatile(response_register) };
             return Result::Ok(SDCommandResponse::Response32Bits(response));
-        },
+        }
         _ => return Result::Ok(SDCommandResponse::NoResponse),
     }
 }
@@ -512,25 +519,27 @@ pub fn write_sd_card(
         &sd_card,
         24,
         SDResponseTypes::R1,
-        CommandFlags::DataPresentSelect
-            | CommandFlags::CommandCRCCheckEnable
-            | CommandFlags::CommandIndexCheckEnable,
+        CommandFlags::DataPresentSelect,
         false,
     )?;
+    debug_println!("CMD 24 sent");
 
+    let _ = check_valid_sd_card(sd_card).unwrap();
     let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
     let mut finished = false;
     for _ in 0..MAX_ITERATIONS {
         let present_state = unsafe {
             PresentState::from_bits_retain(core::ptr::read_volatile(present_state_register_addr))
         };
-        if PresentState::BufferReadEnable.contains(present_state) {
+        if PresentState::BufferWriteEnable.contains(present_state) {
             finished = true;
             break;
         }
         core::hint::spin_loop();
     }
     if !finished {
+        let present_state = unsafe { core::ptr::read_volatile(present_state_register_addr) };
+        debug_println!("State = 0x{present_state:X}");
         return Result::Err(SDCardError::SDTimeout);
     }
 
