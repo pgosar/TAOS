@@ -43,7 +43,7 @@ impl Event {
 
 impl Wake for Event {
     fn wake(self: Arc<Self>) {
-        todo!()
+        
     }
 }
 
@@ -63,8 +63,8 @@ impl EventRunner {
       let waker = get_waker();
       let mut context = Context::from_waker(&waker);
       match event.poll(&mut context) {
-        Poll::Pending => {serial_println!("Pending"); self.event_queue.push_back(event)},
-        Poll::Ready(()) => {serial_println!("Ready");}
+        Poll::Pending => {serial_println!("Pending {:?}", event.eid); self.event_queue.push_back(event)},
+        Poll::Ready(()) => {serial_println!("Ready {:?}", event.eid);}
       }
     }
   }
@@ -90,6 +90,8 @@ fn get_waker() -> Waker {
   }
 }
 
+// BELOW FOR TESTING/DEMONSTRATION PURPOSES
+
 struct RandomFuture {
   prob: f64,
   rng: SmallRng
@@ -112,7 +114,7 @@ type Output = ();
 fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
   let prob: f64 = self.prob;
   let res = self.rng.gen_bool(prob);
-  serial_println!("{}", res);
+  serial_println!("RandPoll: {}", res);
   match res {
     true => {
       cx.waker().clone().wake();
@@ -125,13 +127,13 @@ fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 
 async fn rand_delay(arg1: u32) -> u32 {
   serial_println!("Awaiting random delay");
-  let foo = RandomFuture::new(0.1, 0x1331);  //chosen by fair dice roll
+  let foo = RandomFuture::new(0.3, (arg1).into());
   foo.await;
   arg1
 }
 
-pub async fn print_nums_after_rand_delay() -> () {
-  let res= future::join(rand_delay(1), rand_delay(2)).await;
+pub async fn print_nums_after_rand_delay(arg1: u32) -> () {
+  let res= future::join(rand_delay(arg1), rand_delay(arg1*2)).await;
 
   serial_println!("Results: {} {}", res.0, res.1);
 }

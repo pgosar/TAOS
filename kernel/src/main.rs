@@ -228,10 +228,10 @@ extern "C" fn kmain() -> ! {
 
     // ASYNC
     let mut runner = event::EventRunner::init();
-    runner.schedule(event::print_nums_after_rand_delay());
-    // runner.schedule(event::print_nums_after_rand_delay());
-    // runner.schedule(test_event_two_blocks(400));
-    // runner.schedule(test_event(100));
+    runner.schedule(event::print_nums_after_rand_delay(0x1331));
+    runner.schedule(event::print_nums_after_rand_delay(0x532));
+    runner.schedule(test_event_two_blocks(400));
+    runner.schedule(test_event(100));
     runner.run();
 
     serial_println!("BSP entering idle loop");
@@ -253,14 +253,6 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
 
     idt::enable();
     serial_println!("AP {} entering idle loop", cpu.id);
-
-    // let x: Box<i32> = Box::new(10);
-    // serial_println!("AP {}: {:p} allocated on heap", cpu.id, Box::as_ref(&x) as *const i32);
-    // serial_println!("Running events on AP {}", cpu.id);
-    // let mut runner = event::EventRunner::init();
-    // runner.schedule(test_event(0));
-    // runner.schedule(test_event(100));
-    // runner.run();
 
     idle_loop();
 }
