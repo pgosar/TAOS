@@ -79,7 +79,11 @@ pub trait FileSystem {
     fn create_dir(&mut self, path: &str) -> Result<(), FsError>;
     fn remove_file(&mut self, path: &str) -> Result<(), FsError>;
     fn remove_dir(&mut self, path: &str) -> Result<(), FsError>;
-    fn open_file(&mut self, path: &str) -> Result<Box<Self::File>, FsError>;
+    fn open_file(&mut self, path: &str) -> Result<usize, FsError>;
+    fn close_file(&mut self, fd: usize) -> ();
+    fn write_file(&mut self, fd: usize, buf: &[u8]) -> Result<usize, FsError>;
+    fn seek_file(&mut self, fd: usize, pos: SeekFrom) -> Result<u64, FsError>;
+    fn read_file(& mut self, fd: usize, buf: &mut [u8]) -> Result<usize, FsError>;
     fn read_dir(&self, path: &str) -> Result<Vec<DirEntry>, FsError>;
     fn metadata(&self, path: &str) -> Result<FileMetadata, FsError>;
     fn rename(&mut self, from: &str, to: &str) -> Result<(), FsError>;

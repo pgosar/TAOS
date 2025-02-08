@@ -1,5 +1,6 @@
 use super::*;
 use alloc::vec;
+use alloc::collections::BinaryHeap;
 use core::cmp::{max, min};
 
 const SECTOR_SIZE: usize = 512;
@@ -127,6 +128,10 @@ pub struct Fat16<'a> {
     root_dir_start: u64,
     data_start: u64,
     cluster_size: usize,
+    fd_counter: usize,
+    reuse_fds: BinaryHeap<usize>,
+    fd_table: Vec<Fat16File>,
+
 }
 
 impl<'a> Fat16<'a> {
@@ -233,6 +238,9 @@ impl<'a> Fat16<'a> {
         let root_dir_sectors = ((ROOT_DIR_ENTRIES * 32) + (SECTOR_SIZE - 1)) / SECTOR_SIZE;
         let data_start = root_dir_start + root_dir_sectors as u64;
         let cluster_size = boot_sector.sectors_per_cluster as usize * SECTOR_SIZE;
+        let fd_counter = 0;
+        let reuse_fds = BinaryHeap::new();
+        let fd_table = Vec::new();
 
         Ok(Fat16 {
             device,
@@ -241,6 +249,9 @@ impl<'a> Fat16<'a> {
             root_dir_start,
             data_start,
             cluster_size,
+            fd_counter,
+            reuse_fds,
+            fd_table,
         })
     }
 
@@ -579,22 +590,201 @@ impl<'a> FileSystem for Fat16<'a> {
         self.remove_entry(path, true)
     }
 
-    fn open_file(&mut self, path: &str) -> Result<Box<Self::File>, FsError> {
+    fn open_file(&mut self, path: &str) -> Result<usize, FsError> {
         let (entry, entry_pos) = self.find_entry(path)?;
 
         if entry.is_directory() {
             return Err(FsError::NotSupported);
         }
 
-        Ok(Box::new(Fat16File {
-            current_cluster: entry.start_cluster,
-            position: 0,
-            size: entry.file_size as u64,
-            cluster_size: self.cluster_size,
-            fat_start: self.fat_start,
-            data_start: self.data_start,
-            entry_position: entry_pos,
-        }))
+        let mut fd = usize::MAX;
+
+        if !self.reuse_fds.is_empty() {
+            fd = self.reuse_fds.pop().unwrap_or(usize::MAX);
+            assert!(!self.fd_table[fd].valid);
+            self.fd_table[fd].valid = true;
+            self.fd_table[fd].current_cluster = entry.start_cluster;
+            self.fd_table[fd].position = 0;
+            self.fd_table[fd].size = entry.file_size as u64;
+            self.fd_table[fd].cluster_size = self.cluster_size;
+            self.fd_table[fd].fat_start = self.fat_start;
+            self.fd_table[fd].data_start = self.data_start;
+            self.fd_table[fd].entry_position = entry_pos;
+            
+        }
+        else {
+            fd = self.fd_counter;
+            self.fd_table.push(Self::File {valid: true,
+                                    current_cluster: entry.start_cluster,
+                                    position: 0,
+                                    size: entry.file_size as u64,
+                                    cluster_size: self.cluster_size,
+                                    fat_start: self.fat_start,
+                                    data_start: self.data_start,
+                                    entry_position: entry_pos,});
+            self.fd_counter += 1;
+        }
+
+        assert!(fd != usize::MAX, "File Descriptor is not a valid value.");
+        Ok(fd)
+    }
+
+    fn close_file(&mut self, fd:usize) -> () {
+        let file: &mut Fat16File = self.fd_table.get_mut(fd).expect("Invalid file descriptor.");
+        assert_eq!(file.valid, true, "Cannot close an invailid file descriptor.");
+        
+
+        file.valid = false;
+        file.current_cluster = 0;
+        file.position = 0;
+        file.size = 0 as u64;
+        file.cluster_size = 0;
+        file.fat_start = 0;
+        file.data_start = 0;
+        file.entry_position = 0;
+
+        self.reuse_fds.push(fd);
+    }
+
+    fn write_file(&mut self, fd: usize, buf: &[u8]) -> Result<usize, FsError> {
+        let mut bytes_written = 0;
+        let mut buf_offset = 0;
+
+        let file: &mut Fat16File = self.fd_table.get_mut(fd).expect("Invalid file descriptor.");
+
+        while bytes_written < buf.len() {
+            let cluster_offset = (file.position % file.cluster_size as u64) as usize;
+            let bytes_left_in_cluster = file.cluster_size - cluster_offset;
+            let chunk_size = min(bytes_left_in_cluster, buf.len() - bytes_written);
+
+            let sector = file.cluster_to_sector(file.current_cluster);
+            let mut cluster_data = vec![0u8; file.cluster_size];
+
+            let sectors_per_cluster = file.cluster_size / SECTOR_SIZE;
+            for i in 0..sectors_per_cluster {
+                let mut sector_data = vec![0u8; SECTOR_SIZE];
+                self.device.read_block(sector + i as u64, &mut sector_data)?;
+                let start = i * SECTOR_SIZE;
+                cluster_data[start..start + SECTOR_SIZE].copy_from_slice(&sector_data);
+            }
+
+            cluster_data[cluster_offset..cluster_offset + chunk_size]
+                .copy_from_slice(&buf[buf_offset..buf_offset + chunk_size]);
+
+            for i in 0..sectors_per_cluster {
+                let start = i * SECTOR_SIZE;
+                self.device.write_block(sector + i as u64, &cluster_data[start..start + SECTOR_SIZE])?;
+            }
+
+            bytes_written += chunk_size;
+            buf_offset += chunk_size;
+            file.position += chunk_size as u64;
+            file.size = max(file.size, file.position);
+
+            if cluster_offset + chunk_size == file.cluster_size {
+                let fat_entry = file.read_fat_entry(&mut *self.device, file.current_cluster)?;
+                if fat_entry.is_end_of_chain() {
+                    let new_cluster = file.allocate_cluster(&mut *self.device)?;
+                    file.write_fat_entry(
+                        &mut *self.device,
+                        file.current_cluster,
+                        FatEntry {
+                            cluster: new_cluster,
+                        },
+                    )?;
+                    file.current_cluster = new_cluster;
+                } else {
+                    file.current_cluster = fat_entry.cluster;
+                }
+            }
+        }
+
+        file.update_directory_entry(&mut *self.device, file.size)?;
+        Ok(bytes_written)
+    }
+
+    fn seek_file(&mut self, fd: usize, pos: SeekFrom) -> Result<u64, FsError>  {
+        
+        let file: &mut Fat16File = self.fd_table.get_mut(fd).expect("Invalid file descriptor.");
+
+        let new_pos = match pos {
+            SeekFrom::Start(offset) => offset,
+            SeekFrom::End(offset) => {
+                if offset < 0 {
+                    file.size
+                        .checked_sub(offset.unsigned_abs())
+                        .ok_or(FsError::InvalidOffset)?
+                } else {
+                    file.size
+                        .checked_add(offset as u64)
+                        .ok_or(FsError::InvalidOffset)?
+                }
+            }
+            SeekFrom::Current(offset) => {
+                if offset < 0 {
+                    file.position
+                        .checked_sub(offset.unsigned_abs())
+                        .ok_or(FsError::InvalidOffset)?
+                } else {
+                    file.position
+                        .checked_add(offset as u64)
+                        .ok_or(FsError::InvalidOffset)?
+                }
+            }
+        };
+
+        if new_pos > file.size {
+            return Err(FsError::InvalidOffset);
+        }
+
+        file.position = new_pos;
+        Ok(new_pos)
+    }
+
+    fn read_file(& mut self, fd: usize, buf: &mut [u8]) -> Result<usize, FsError> {
+        let file: &mut Fat16File = self.fd_table.get_mut(fd).expect("Invalid file descriptor.");
+
+        if file.position >= file.size {
+            return Ok(0);
+        }
+
+        let mut bytes_read = 0;
+        let mut buf_offset = 0;
+        let bytes_to_read = min(buf.len(), (file.size - file.position) as usize);
+
+        while bytes_read < bytes_to_read {
+            let cluster_offset = (file.position % file.cluster_size as u64) as usize;
+            let bytes_left_in_cluster = file.cluster_size - cluster_offset;
+            let chunk_size = min(bytes_left_in_cluster, bytes_to_read - bytes_read);
+
+            let sector = file.cluster_to_sector(file.current_cluster);
+            let mut cluster_data = vec![0u8; file.cluster_size];
+
+            let sectors_per_cluster = file.cluster_size / SECTOR_SIZE;
+            for i in 0..sectors_per_cluster {
+                let mut sector_data = vec![0u8; SECTOR_SIZE];
+                self.device.read_block(sector + i as u64, &mut sector_data)?;
+                let start = i * SECTOR_SIZE;
+                cluster_data[start..start + SECTOR_SIZE].copy_from_slice(&sector_data);
+            }
+
+            buf[buf_offset..buf_offset + chunk_size]
+                .copy_from_slice(&cluster_data[cluster_offset..cluster_offset + chunk_size]);
+
+            bytes_read += chunk_size;
+            buf_offset += chunk_size;
+            file.position += chunk_size as u64;
+
+            if cluster_offset + chunk_size == file.cluster_size {
+                let next_cluster = file.read_fat_entry(&mut *self.device, file.current_cluster)?;
+                if next_cluster.is_end_of_chain() {
+                    break;
+                }
+                file.current_cluster = next_cluster.cluster;
+            }
+        }
+
+        Ok(bytes_read)
     }
 
     fn read_dir(&self, path: &str) -> Result<Vec<DirEntry>, FsError> {
@@ -777,6 +967,7 @@ impl<'a> FileSystem for Fat16<'a> {
 }
 
 pub struct Fat16File {
+    valid: bool,
     current_cluster: u16,
     position: u64,
     size: u64,

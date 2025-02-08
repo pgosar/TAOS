@@ -134,23 +134,22 @@ extern "C" fn kmain() -> ! {
 
     // Create a test file
     fs.create_file("/test_dir/test.txt")
-        .expect("Failed to create file");
-    let mut file = fs
+        .expect("FailedBlockDevice to create file");
+    let fd = fs
         .open_file("/test_dir/test.txt")
         .expect("Failed to open file");
 
     // Write test data
     let test_data = b"Hello, TaOS FAT16!";
-    let written = file
-        .write_with_device(fs.device.as_mut(), test_data)
+    let written = fs.write_file(fd, test_data)
         .expect("Failed to write");
     assert_eq!(written, test_data.len(), "Write length mismatch");
 
-    file.seek(SeekFrom::Start(0))
+    fs.seek_file(fd, SeekFrom::Start(0))
         .expect("Failed to seek to start");
     let mut read_buf = [0u8; 32];
-    let read = file
-        .read_with_device(fs.device.as_mut(), &mut read_buf)
+    let read = fs
+        .read_file(fd, &mut read_buf)
         .expect("Failed to read");
     assert_eq!(read, test_data.len(), "Read length mismatch");
     assert_eq!(&read_buf[..read], test_data, "Read data mismatch");
@@ -168,16 +167,16 @@ extern "C" fn kmain() -> ! {
     assert!(!metadata.is_dir, "Should not be a directory");
 
     // Test partial reads
-    file.seek(SeekFrom::Start(7)).expect("Failed to seek");
+    fs.seek_file(fd, SeekFrom::Start(7)).expect("Failed to seek");
     let mut partial_buf = [0u8; 4];
-    let read = file
-        .read_with_device(fs.device.as_mut(), &mut partial_buf)
+    let read = fs
+        .read_file(fd, &mut partial_buf)
         .expect("Failed to read");
     assert_eq!(read, 4, "Partial read length mismatch");
     assert_eq!(&partial_buf[..read], b"TaOS", "Partial read data mismatch");
 
-    // Close file and test removal
-    drop(file);
+    // // Close file and test removal
+    fs.close_file(fd);
 
     fs.remove_file("/test_dir/test.txt")
         .expect("Failed to remove file");
