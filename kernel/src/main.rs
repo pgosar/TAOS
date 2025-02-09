@@ -18,7 +18,7 @@ use alloc::boxed::Box;
 
 use taos::filesys::block::memory::MemoryBlockDevice;
 use taos::filesys::fat16::Fat16;
-use taos::filesys::{File, FileSystem, SeekFrom};
+use taos::filesys::{FileSystem, SeekFrom};
 use taos::{
     idle_loop,
     memory::{
@@ -141,16 +141,13 @@ extern "C" fn kmain() -> ! {
 
     // Write test data
     let test_data = b"Hello, TaOS FAT16!";
-    let written = fs.write_file(fd, test_data)
-        .expect("Failed to write");
+    let written = fs.write_file(fd, test_data).expect("Failed to write");
     assert_eq!(written, test_data.len(), "Write length mismatch");
 
     fs.seek_file(fd, SeekFrom::Start(0))
         .expect("Failed to seek to start");
     let mut read_buf = [0u8; 32];
-    let read = fs
-        .read_file(fd, &mut read_buf)
-        .expect("Failed to read");
+    let read = fs.read_file(fd, &mut read_buf).expect("Failed to read");
     assert_eq!(read, test_data.len(), "Read length mismatch");
     assert_eq!(&read_buf[..read], test_data, "Read data mismatch");
 
@@ -167,11 +164,10 @@ extern "C" fn kmain() -> ! {
     assert!(!metadata.is_dir, "Should not be a directory");
 
     // Test partial reads
-    fs.seek_file(fd, SeekFrom::Start(7)).expect("Failed to seek");
+    fs.seek_file(fd, SeekFrom::Start(7))
+        .expect("Failed to seek");
     let mut partial_buf = [0u8; 4];
-    let read = fs
-        .read_file(fd, &mut partial_buf)
-        .expect("Failed to read");
+    let read = fs.read_file(fd, &mut partial_buf).expect("Failed to read");
     assert_eq!(read, 4, "Partial read length mismatch");
     assert_eq!(&partial_buf[..read], b"TaOS", "Partial read data mismatch");
 
