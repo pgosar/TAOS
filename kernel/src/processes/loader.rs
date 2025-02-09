@@ -1,8 +1,12 @@
 use crate::{
-    constants::processes::{BINARY, STACK_SIZE, STACK_START},
+    constants::{
+        memory::PAGE_SIZE,
+        processes::{BINARY, STACK_SIZE, STACK_START},
+    },
     memory::paging::create_mapping,
     serial_println,
 };
+use core::arch::asm;
 use goblin::{
     elf::Elf,
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
@@ -13,28 +17,7 @@ use x86_64::{
     VirtAddr,
 };
 
-pub fn load_binary(hhdm_offset: VirtAddr, mapper: &mut impl Mapper<Size4KiB>) {
-    let binary_data = BINARY;
-    let dest_ptr: *mut u8 = 0x124000 as *mut u8;
-    let dest_end = hhdm_offset;
-    let _binary_size = binary_data.len() as u64;
-
-    let dest_start = VirtAddr::new_truncate(0x124000);
-    let start_page: Page = Page::containing_address(dest_start);
-    let end_page = Page::containing_address(dest_end);
-    let page_range = Page::range_inclusive(start_page, end_page);
-    create_mapping(start_page, mapper, None);
-    //for page in page_range {
-    //    create_mapping(page, mapper, None);
-    //}
-
-    //unsafe {
-    //    core::ptr::copy_nonoverlapping(binary_data.as_ptr(), dest_ptr, binary_data.len());
-    //}
-    let stack_ptr = load_elf_and_setup_memory(BINARY, mapper);
-}
-
-pub fn load_elf_and_setup_memory(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAddr {
+pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAddr {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
     serial_println!(
         "ELF parsed successfully. Entry point: 0x{:x}",
@@ -97,7 +80,7 @@ pub fn load_elf_and_setup_memory(elf_bytes: &[u8], mapper: &mut impl Mapper<Size
     let stack_start = VirtAddr::new(STACK_START);
     let stack_end = VirtAddr::new(STACK_START + STACK_SIZE as u64);
     let start_page: Page<Size4KiB> = Page::containing_address(stack_start);
-    let end_page: Page<Size4KiB> = Page::containing_address(stack_end - 1);
+    let end_page: Page<Size4KiB> = Page::containing_address(stack_end);
 
     serial_println!(
         "Mapping stack: start=0x{:x}, end=0x{:x} ({} pages)",
@@ -114,6 +97,14 @@ pub fn load_elf_and_setup_memory(elf_bytes: &[u8], mapper: &mut impl Mapper<Size
         "Stack mapped successfully. Initial SP (stack pointer): 0x{:x}",
         stack_end.as_u64()
     );
-
+    //unsafe {
+    //    asm!(
+    //        "mov rsp, {}",
+    //        "jmp {}",
+    //        in(reg) stack_end.as_u64(),
+    //        in(reg) elf.header.e_entry,
+    //        options(noreturn)
+    //    );
+    //}
     stack_end
 }
