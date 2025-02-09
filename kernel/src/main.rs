@@ -11,7 +11,10 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::interrupts::{gdt, idt, x2apic};
-use taos::processes::loader::load_binary;
+use taos::processes::{
+    loader::load_binary,
+    process::{create_process, PROCESS_TABLE},
+};
 use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
@@ -225,9 +228,11 @@ extern "C" fn kmain() -> ! {
         }
     }
 
-    x2apic::init_ap().expect("Failed to initialize core APIC");
+    let proc = create_process();
+    serial_println!("Created process with PID: {}", proc.pid);
+
     // Load in a binary right after the kernel
-    load_binary(hhdm_offset, &mut mapper);
+    //load_binary(hhdm_offset, &mut mapper);
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
