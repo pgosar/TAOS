@@ -47,7 +47,6 @@ pub fn alloc_frame() -> Option<PhysFrame> {
     }
 }
 
-
 /// Exposed function to allocate a frame that runs the global's deallocate_frame
 pub fn dealloc_frame(frame: PhysFrame<Size4KiB>) {
     // Lock the global allocator.
@@ -56,5 +55,5 @@ pub fn dealloc_frame(frame: PhysFrame<Size4KiB>) {
     // Get a mutable reference to the allocator if it exists, then call allocate_frame.
     if let Some(ref mut deallocator) = *allocator_lock {
         unsafe { deallocator.deallocate_frame(frame) }
-    } 
+    }
 }
