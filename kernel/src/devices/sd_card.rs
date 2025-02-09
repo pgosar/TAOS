@@ -6,9 +6,12 @@ use x86_64::{
 use crate::{
     debug_println,
     devices::pci::{write_pci_command, COMMAND_BUS_MASTER, COMMAND_MEMORY_SPACE},
-    memory::{frame_allocator::BootIntoFrameAllocator, paging},
+    memory::{
+        frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
+        paging,
+    },
 };
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 
 use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
 
@@ -167,7 +170,6 @@ pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
 pub fn initalize_sd_card(
     sd_card: &DeviceInfo,
     mapper: &mut OffsetPageTable,
-    frame_allocator: &mut BootIntoFrameAllocator,
 ) -> Result<SDCardInfo, SDCardError> {
     // Assume sd_card is a device info for an SD Crd
     // Lets assume 1 slot, and it uses BAR 1
@@ -182,10 +184,10 @@ pub fn initalize_sd_card(
     let base_address_register = unsafe { read_config(sd_card.bus, sd_card.device, 0, 0x10) };
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
     let bar_frame = PhysFrame::from_start_address(PhysAddr::new(bar_address)).unwrap();
-
     let page = Page::containing_address(VirtAddr::new(bar_address));
-    paging::create_uncachable_mapping_given_frame(page, mapper, bar_frame, frame_allocator);
 
+    paging::create_uncachable_mapping(page, bar_frame, mapper);
+    // todo!("Need to create an uncacheable mapping");
     // Re-enable memory space commands
     unsafe {
         write_pci_command(
@@ -274,7 +276,7 @@ fn power_on_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     // Turn off power so we can change the voltage
     unsafe { core::ptr::write_volatile(power_control_addr, 0) };
     // Use maximum voltage that capabiltieis shows
-    let mut power_control = 0;
+    let mut power_control;
     if Capabilities::Voltage3_3Support
         .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
     {
@@ -304,29 +306,6 @@ fn set_sd_clock(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
 
     // TODO check if actural hardware supports PLL enable (if so unset it too)
-    // Determine clock frequency select
-    // let base_clock: u8 = ((sd_card.capabilities >> 8) & 0xFF)
-    //     .try_into()
-    //     .expect("Trimmed out bits");
-    // // We need to ensure this is less than SD_MAX_FREQUENCY_MHZ
-    // let mut divisor = 1;
-    // let mut divisor_set = false;
-    // for _ in 0..8 {
-    //     debug_println!("Base clock is {base_clock}");
-    //     let frequency = base_clock / divisor;
-    //     debug_println!("Divisor is {divisor}");
-    //     if frequency < SD_MAX_FREQUENCY_MHZ {
-    //         // Set Divisor
-    //         divisor_set = true;
-    //         break;
-    //     }
-    //     divisor <<= 1;
-    // }
-    // if !divisor_set {
-    //     debug_println!("Unable to determine Divisor");
-    //     return Result::Err(SDCardError::FrequencyUnableToBeSet);
-    // }
-    // let divisor_extended: u16 = divisor.into();
     clock_ctrl_reg &= 0x00FF;
     clock_ctrl_reg |= 0x80 << 8;
     // clock_ctrl_reg |= divisor_extended << 8;
@@ -551,7 +530,7 @@ fn send_sd_command(
                     core::ptr::write_volatile(interrupt_status_register, 1);
                     return Result::Ok(determine_sd_card_response(&sd_card, respone_type));
                 } else if command_done != 0 {
-                    debug_println!("Something happened 0x{command_done:X}")
+                    debug_println!("Something happened 0x{command_done:X}");
                 }
             }
         }
@@ -604,7 +583,12 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCa
     let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
     unsafe { core::ptr::write_volatile(argument_register_addr, block) };
     let transfer_mode_register_adder = (sd_card.base_address_register + 0xC) as *mut u16;
-    unsafe { core::ptr::write_volatile(transfer_mode_register_adder, TransferModeFlags::ReadToCard.bits()) };
+    unsafe {
+        core::ptr::write_volatile(
+            transfer_mode_register_adder,
+            TransferModeFlags::ReadToCard.bits(),
+        )
+    };
 
     // Send command
     debug_println!("Before sending cmd 17");
@@ -656,12 +640,7 @@ pub fn write_sd_card(
     let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
     unsafe { core::ptr::write_volatile(argument_register_addr, block) };
     let transfer_mode_register_adder = (sd_card.base_address_register + 0xC) as *mut u16;
-    unsafe {
-        core::ptr::write_volatile(
-            transfer_mode_register_adder,
-            0,
-        )
-    };
+    unsafe { core::ptr::write_volatile(transfer_mode_register_adder, 0) };
 
     // Send command
     debug_println!("Before sending cmd 24");

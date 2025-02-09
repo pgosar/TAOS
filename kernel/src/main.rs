@@ -7,17 +7,27 @@ use limine::request::{
     SmpRequest,
 };
 use limine::response::MemoryMapResponse;
-use limine::smp::Cpu;
+use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
+use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::devices::pci::walk_pci_bus;
 use taos::devices::sd_card::{
     find_sd_card, initalize_sd_card, read_sd_card, write_sd_card, SDCardInfo,
 };
-use taos::interrupts::{gdt, idt};
-use taos::memory::{frame_allocator::BootIntoFrameAllocator, paging};
+use taos::interrupts::{gdt, idt, x2apic};
+use taos::memory::paging;
 use taos::{idle_loop, serial_println};
-use x86_64::structures::paging::{Page, Translate};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
+
+extern crate alloc;
+use alloc::boxed::Box;
+
+use taos::memory::{
+    boot_frame_allocator::BootIntoFrameAllocator,
+    frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
+    heap,
+};
 
 #[used]
 #[link_section = ".requests"]
@@ -37,7 +47,7 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
 #[link_section = ".requests"]
-static SMP_REQUEST: SmpRequest = SmpRequest::new();
+static SMP_REQUEST: SmpRequest = SmpRequest::new().with_flags(RequestFlags::X2APIC);
 
 #[used]
 #[link_section = ".requests_start_marker"]
@@ -55,8 +65,10 @@ extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     serial_println!("Booting BSP...");
+
     gdt::init(0);
     idt::init_idt(0);
+    x2apic::init_bsp(CPU_FREQUENCY).expect("Failed to configure x2APIC");
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -100,15 +112,19 @@ extern "C" fn kmain() -> ! {
 
     let hhdm_offset: VirtAddr = VirtAddr::new(hhdm_response.offset());
 
-    // decide what frames we can allocate based on memmap
-    let mut frame_allocator = unsafe { BootIntoFrameAllocator::init(memory_map_response) };
+    // create a basic frame allocator and set it globally
+    unsafe {
+        *FRAME_ALLOCATOR.lock() = Some(GlobalFrameAllocator::Boot(BootIntoFrameAllocator::init(
+            memory_map_response,
+        )));
+    }
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
 
-    paging::create_mapping(page, &mut mapper, &mut frame_allocator);
+    paging::create_mapping(page, &mut mapper);
 
     let addresses = [
         // the identity-mapped vga buffer page
@@ -119,10 +135,82 @@ extern "C" fn kmain() -> ! {
         serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
     }
 
+    // should trigger page fault and panic
+    //unsafe {
+    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
+    //}
+    // testing that the heap allocation works
+    heap::init_heap(&mut mapper).expect("heap initialization failed");
+    let x: Box<i32> = Box::new(10);
+    let y: Box<i32> = Box::new(20);
+    let z: Box<i32> = Box::new(30);
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&x) as *const i32
+    );
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&y) as *const i32
+    );
+    serial_println!(
+        "Heap object allocated at: {:p}",
+        Box::as_ref(&z) as *const i32
+    );
+
+    let alloc_dealloc_addr = VirtAddr::new(0x12515);
+    let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
+    serial_println!("Mapping a new page");
+    paging::create_mapping(new_page, &mut mapper);
+
+    let phys = mapper
+        .translate_addr(alloc_dealloc_addr)
+        .expect("Translation failed");
+    // A downside of the current approach is that it is difficult to get the
+    // specific methods that are a part of any allocator. Here is an example
+    // on how to do this.
+    {
+        let mut alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Bitmap(ref mut bitmap_alloc)) => {
+                serial_println!(
+                    "{:?} -> {:?}, and the frame is {}",
+                    alloc_dealloc_addr,
+                    phys,
+                    bitmap_alloc.is_frame_used(PhysFrame::containing_address(phys))
+                );
+            }
+            _ => panic!("Bitmap alloc expected here"),
+        }
+    }
+
+    serial_println!("Now unmapping the page");
+    paging::remove_mapping(new_page, &mut mapper);
+    match mapper.translate_addr(alloc_dealloc_addr) {
+        Some(phys_addr) => {
+            serial_println!("Mapping still exists at physical address: {:?}", phys_addr);
+        }
+        None => {
+            serial_println!("Translation failed, as expected");
+        }
+    }
+
+    {
+        let alloc = FRAME_ALLOCATOR.lock();
+        match *alloc {
+            Some(GlobalFrameAllocator::Boot(ref _boot_alloc)) => {
+                serial_println!("Boot frame allocator in use");
+            }
+            Some(GlobalFrameAllocator::Bitmap(ref _bitmap_alloc)) => {
+                serial_println!("Bitmap frame allocator in use");
+            }
+            _ => panic!("Unknown frame allocator"),
+        }
+    }
+
     let devices = walk_pci_bus();
     let _sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
         None => Option::None,
-        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper, &mut frame_allocator).ok(),
+        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper).ok(),
     };
     _sd_card_struct.unwrap();
     let data_to_write: [u32; 128] = [255; 128];
@@ -134,10 +222,6 @@ extern "C" fn kmain() -> ! {
             Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
         }
     }
-    // should trigger page fault and panic
-    //unsafe {
-    //    *(0x201008 as *mut u64) = 42; // Guaranteed to page fault
-    //}
 
     serial_println!("BSP entering idle loop");
     idle_loop();
@@ -148,6 +232,8 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     CPU_COUNT.fetch_add(1, Ordering::SeqCst);
     gdt::init(cpu.id);
     idt::init_idt(cpu.id);
+    x2apic::init_ap().expect("Failed to initialize core APIC");
+
     serial_println!("AP {} initialized", cpu.id);
 
     while !BOOT_COMPLETE.load(Ordering::SeqCst) {
