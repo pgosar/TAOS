@@ -92,5 +92,6 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(_: InterruptStackFrame) {
+    serial_println!("HELOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO");
     x2apic::send_eoi();
 }

@@ -146,7 +146,6 @@ extern "C" fn kmain() -> ! {
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
-
     paging::create_mapping(page, &mut mapper);
 
     let addresses = [
@@ -226,12 +225,9 @@ extern "C" fn kmain() -> ! {
         }
     }
 
+    x2apic::init_ap().expect("Failed to initialize core APIC");
     // Load in a binary right after the kernel
-    unsafe {
-        let binary_address = load_binary(_kernel_end, &mut mapper);
-        //let entry: fn() -> ! = core::mem::transmute(binary_address);
-        //entry();
-    };
+    load_binary(hhdm_offset, &mut mapper);
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
