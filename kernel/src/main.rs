@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
-#![cfg_attr(feature = "strict", deny(warnings))]
+#![feature(custom_test_frameworks)]
+#![test_runner(taos::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::request::{
@@ -89,7 +91,7 @@ async fn test_event_two_blocks(arg1: u64) {
 }
 
 #[no_mangle]
-extern "C" fn kmain() -> ! {
+extern "C" fn _start() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     serial_println!("Booting BSP...");
@@ -270,8 +272,15 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     run_loop(cpu.id)
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     serial_println!("Kernel panic: {}", info);
     idle_loop();
+}
+
+#[cfg(test)]
+#[panic_handler]
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    taos::test_panic_handler(info);
 }

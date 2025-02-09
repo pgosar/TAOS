@@ -17,7 +17,7 @@ uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
 talc = "4.4.2"
 
-rand = { version = "0.8.3", features = ["small_rng"], default-features = false }
-futures = { version = "0.3", default-features = false, features = ["alloc"] }
-crossbeam-queue = { version = "0.3.12", default-features = false, features = ["alloc"] }
-arrayvec = { version = "0.7.6", default-features = false }
+[package.metadata.limage]
+test-success-exit-code = 33 # (0x10 << 1) | 1
+test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "stdio", "-display", "none"]
+image-path = "target/grovean/grovean-x86_64.iso"
