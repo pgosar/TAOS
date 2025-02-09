@@ -1,8 +1,5 @@
 use crate::{
-    constants::{
-        memory::PAGE_SIZE,
-        processes::{BINARY, STACK_SIZE, STACK_START},
-    },
+    constants::processes::{STACK_SIZE, STACK_START},
     memory::paging::create_mapping,
     serial_println,
 };
