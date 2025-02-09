@@ -66,7 +66,7 @@ async fn test_sum(start: u64) -> u64 {
     for i in 0..MAX {
         sum += i;
         if i == MAX/2 {
-            serial_println!("Halfway through event");
+            serial_println!("Halfway through long event");
         }
     }
     sum
@@ -228,7 +228,8 @@ extern "C" fn kmain() -> ! {
 
     // ASYNC
     let mut runner = event::EventRunner::init();
-    runner.schedule(event::print_nums_after_rand_delay(0x1331));
+    runner.schedule(event::print_nums_after_rand_delay(0x1332));
+
     runner.schedule(event::print_nums_after_rand_delay(0x532));
     runner.schedule(test_event_two_blocks(400));
     runner.schedule(test_event(100));
