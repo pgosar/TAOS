@@ -391,7 +391,7 @@ fn send_sd_reset_commands(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     )?;
     if let SDCommandResponse::Response32Bits(acmd_response) = acmd_response_enum {
         unsafe { core::ptr::write_volatile(argument_register_addr, 0) };
-        send_sd_command(sd_card, 0, SDResponseTypes::R1, CommandFlags::empty(), true)?;
+        send_sd_command(sd_card, 0, SDResponseTypes::R0, CommandFlags::empty(), true)?;
         // CMD 8
         let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
         // TODO fix: Hard code voltage in 2.7-3.8v
@@ -430,7 +430,7 @@ fn send_sd_reset_commands(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     send_sd_command(sd_card, 2, SDResponseTypes::R2, CommandFlags::empty(), true)?;
     // cmd 3
     unsafe { core::ptr::write_volatile(argument_register_addr, 0) };
-    send_sd_command(sd_card, 2, SDResponseTypes::R6, CommandFlags::empty(), true)?;
+    send_sd_command(sd_card, 3, SDResponseTypes::R6, CommandFlags::empty(), true)?;
 
     // cmd 9
     return Result::Ok(());
@@ -518,10 +518,9 @@ fn send_sd_command(
         let interrupt_status_register = (sd_card.base_address_register + 0x30) as *mut u16;
         for _ in 0..MAX_ITERATIONS {
             unsafe {
-                let mut command_done = core::ptr::read_volatile(interrupt_status_register);
+                let command_done = core::ptr::read_volatile(interrupt_status_register);
                 if (command_done & 1) == 1 {
-                    command_done &= 0xFFFE;
-                    core::ptr::write_volatile(interrupt_status_register, command_done);
+                    core::ptr::write_volatile(interrupt_status_register, 1);
                     return Result::Ok(determine_sd_card_response(&sd_card, respone_type));
                 } else if command_done != 0 {
                     debug_println!("Something happened 0x{command_done:X}")
