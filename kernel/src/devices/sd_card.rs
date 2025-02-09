@@ -60,7 +60,7 @@ bitflags! {
         const ResponseErrorChecKEnable = 1 << 7;
         const ResponseTypeSDIO = 1 << 6;
         const MultipleBlockSelect = 1 << 5;
-        const WriteToCard = 1 << 4;
+        const ReadToCard = 1 << 4;
         const BlockCountEnable = 1 << 1;
         const DMAEnable = 1;
     }
@@ -137,7 +137,7 @@ const SD_NO_DMA_INTERFACE: u8 = 0x0;
 const SD_DMA_INTERFACE: u8 = 0x1;
 #[allow(dead_code)]
 const SD_VENDOR_UNIQUE_INTERFACE: u8 = 0x2;
-const MAX_ITERATIONS: usize = 100;
+const MAX_ITERATIONS: usize = 1_000;
 const SD_MAX_FREQUENCY_MHZ: u8 = 10;
 /// Finds the FIRST device that represents an SD card, or returns None if
 /// this was not found. Most functions take in SDCard Info struct, which
@@ -275,16 +275,19 @@ fn power_on_sd_card(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     unsafe { core::ptr::write_volatile(power_control_addr, 0) };
     // Use maximum voltage that capabiltieis shows
     let mut power_control = 0;
-    if Capabilities::Voltage3_3Support.intersects(Capabilities::from_bits_retain(sd_card.capabilities)) {
+    if Capabilities::Voltage3_3Support
+        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+    {
         power_control = 0b111 << 1;
-    }
-    else if Capabilities::Voltage1_8Support.intersects(Capabilities::from_bits_retain(sd_card.capabilities)) {
+    } else if Capabilities::Voltage1_8Support
+        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+    {
         power_control = 0b101 << 1;
-    }
-    else if Capabilities::Voltage3_0Support.intersects(Capabilities::from_bits_retain(sd_card.capabilities)) {
+    } else if Capabilities::Voltage3_0Support
+        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+    {
         power_control = 0b110 << 1;
-    }
-    else {
+    } else {
         return Result::Err(SDCardError::VoltageUnableToBeSet);
     }
     unsafe { core::ptr::write_volatile(power_control_addr, power_control) };
@@ -430,7 +433,32 @@ fn send_sd_reset_commands(sd_card: &SDCardInfo) -> Result<(), SDCardError> {
     send_sd_command(sd_card, 2, SDResponseTypes::R2, CommandFlags::empty(), true)?;
     // cmd 3
     unsafe { core::ptr::write_volatile(argument_register_addr, 0) };
-    send_sd_command(sd_card, 3, SDResponseTypes::R6, CommandFlags::empty(), true)?;
+    let rca_enum = send_sd_command(sd_card, 3, SDResponseTypes::R6, CommandFlags::empty(), true)?;
+    if let SDCommandResponse::Response32Bits(rca) = rca_enum {
+        unsafe { core::ptr::write_volatile(argument_register_addr, rca) };
+        send_sd_command(sd_card, 9, SDResponseTypes::R2, CommandFlags::empty(), true)?;
+
+        unsafe { core::ptr::write_volatile(argument_register_addr, rca) };
+        send_sd_command(
+            sd_card,
+            13,
+            SDResponseTypes::R1,
+            CommandFlags::empty(),
+            true,
+        )?;
+
+        // Sebd cnd 7 to set transfer state
+        unsafe { core::ptr::write_volatile(argument_register_addr, rca) };
+        send_sd_command(
+            sd_card,
+            7,
+            SDResponseTypes::R1b,
+            CommandFlags::empty(),
+            true,
+        )?;
+    } else {
+        panic!("CMD 3 should return a 32 bit response");
+    }
 
     // cmd 9
     return Result::Ok(());
@@ -576,7 +604,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCa
     let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
     unsafe { core::ptr::write_volatile(argument_register_addr, block) };
     let transfer_mode_register_adder = (sd_card.base_address_register + 0xC) as *mut u16;
-    unsafe { core::ptr::write_volatile(transfer_mode_register_adder, 0) };
+    unsafe { core::ptr::write_volatile(transfer_mode_register_adder, TransferModeFlags::ReadToCard.bits()) };
 
     // Send command
     debug_println!("Before sending cmd 17");
@@ -584,25 +612,25 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCa
         &sd_card,
         17,
         SDResponseTypes::R1,
-        CommandFlags::DataPresentSelect
-            | CommandFlags::CommandCRCCheckEnable
-            | CommandFlags::CommandIndexCheckEnable,
-        false,
+        CommandFlags::DataPresentSelect,
+        true,
     )?;
 
+    debug_println!("after sending cmd 17");
     let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
     let mut finished = false;
     for _ in 0..MAX_ITERATIONS {
         let present_state = unsafe {
             PresentState::from_bits_retain(core::ptr::read_volatile(present_state_register_addr))
         };
-        if PresentState::BufferReadEnable.contains(present_state) {
+        if PresentState::BufferReadEnable.intersects(present_state) {
             finished = true;
             break;
         }
         core::hint::spin_loop();
     }
     if !finished {
+        debug_println!("Timedout");
         return Result::Err(SDCardError::SDTimeout);
     }
 
@@ -624,7 +652,6 @@ pub fn write_sd_card(
     unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };
     let block_count_register_addr = (sd_card.base_address_register + 0x6) as *mut u16;
     unsafe { core::ptr::write_volatile(block_count_register_addr, 1) };
-
     check_valid_sd_card(sd_card)?;
     let argument_register_addr = (sd_card.base_address_register + 0x8) as *mut u32;
     unsafe { core::ptr::write_volatile(argument_register_addr, block) };
@@ -632,7 +659,7 @@ pub fn write_sd_card(
     unsafe {
         core::ptr::write_volatile(
             transfer_mode_register_adder,
-            (TransferModeFlags::WriteToCard).bits(),
+            0,
         )
     };
 
@@ -643,18 +670,18 @@ pub fn write_sd_card(
         24,
         SDResponseTypes::R1,
         CommandFlags::DataPresentSelect,
-        false,
+        true,
     )?;
     debug_println!("CMD 24 sent");
 
-    let _ = check_valid_sd_card(sd_card).unwrap();
+    // let _ = check_valid_sd_card(sd_card).unwrap();
     let present_state_register_addr = (sd_card.base_address_register + 0x24) as *const u32;
     let mut finished = false;
     for _ in 0..MAX_ITERATIONS {
         let present_state = unsafe {
             PresentState::from_bits_retain(core::ptr::read_volatile(present_state_register_addr))
         };
-        if PresentState::BufferWriteEnable.contains(present_state) {
+        if PresentState::BufferWriteEnable.intersects(present_state) {
             finished = true;
             break;
         }
