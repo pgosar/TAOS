@@ -53,8 +53,6 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAdd
         }
 
         for page in Page::range_inclusive(start_page, end_page) {
-            //create_mapping(page, mapper, Some(flags)); FIXME: This currently page faults due to
-            //not having a writable flag
             create_mapping(page, mapper, None);
         }
 
@@ -68,6 +66,16 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAdd
             if mem_size > file_size {
                 let bss_start = dest.add(file_size);
                 core::ptr::write_bytes(bss_start, 0, mem_size - file_size);
+            }
+        }
+
+        // Now that the page is written, we can update the flags
+        for page in Page::range_inclusive(start_page, end_page) {
+            unsafe {
+                mapper
+                    .update_flags(page, flags)
+                    .expect("Updating flags failed")
+                    .flush();
             }
         }
 
