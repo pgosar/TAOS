@@ -73,8 +73,6 @@ pub enum SeekFrom {
 
 /// The main filesystem trait that must be implemented by all filesystem types
 pub trait FileSystem {
-    type File: File;
-
     fn create_file(&mut self, path: &str) -> Result<(), FsError>;
     fn create_dir(&mut self, path: &str) -> Result<(), FsError>;
     fn remove_file(&mut self, path: &str) -> Result<(), FsError>;

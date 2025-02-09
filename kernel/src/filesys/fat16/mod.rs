@@ -398,8 +398,6 @@ impl<'a> Fat16<'a> {
 }
 
 impl<'a> FileSystem for Fat16<'a> {
-    type File = Fat16File;
-
     fn create_file(&mut self, path: &str) -> Result<(), FsError> {
         let (parent_path, name) = match path.rfind('/') {
             Some(pos) => (&path[..pos], &path[pos + 1..]),
@@ -490,7 +488,7 @@ impl<'a> FileSystem for Fat16<'a> {
             return Err(FsError::NotSupported);
         }
 
-        let file = Self::File {
+        let file = Fat16File {
             valid: true,
             current_cluster: entry.start_cluster,
             position: 0,
