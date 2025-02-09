@@ -1,10 +1,16 @@
 extern crate alloc;
 
+use crate::memory::frame_allocator::alloc_frame;
+use crate::processes::loader::load_elf;
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
+use x86_64::{
+    structures::paging::{Mapper, OffsetPageTable, PageTable, PageTableFlags, PhysFrame, Size4KiB},
+    VirtAddr,
+};
 
 // process counter must be thread-safe
 static NEXT_PID: AtomicU32 = AtomicU32::new(1);
@@ -25,6 +31,7 @@ pub struct PCB {
     registers: [u64; 32],
     stack_pointer: u64,
     program_counter: u64,
+    pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
 
 // global process table must be thread-safe
@@ -49,8 +56,15 @@ pub fn print_process_table() {
     serial_println!("========================");
 }
 
-pub fn create_process() -> Arc<PCB> {
+pub fn create_process(
+    elf_bytes: &[u8],
+    kernel_mapper: &mut OffsetPageTable<'static>,
+    hhdm_offset: VirtAddr,
+) -> Arc<PCB> {
     let pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
+
+    let (mut process_mapper, process_pml4_frame) =
+        unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
     let process = Arc::new(PCB {
         pid,
@@ -58,10 +72,42 @@ pub fn create_process() -> Arc<PCB> {
         registers: [0; 32],
         stack_pointer: 0,
         program_counter: 0,
+        pml4_frame: process_pml4_frame,
     });
 
-    // Insert into process table
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-
+    unsafe { switch_to_process(&process) };
+    load_elf(elf_bytes, &mut process_mapper);
     process
+}
+
+pub unsafe fn create_process_page_table(
+    kernel_pt: &OffsetPageTable<'static>,
+    hhdm_base: VirtAddr,
+) -> (OffsetPageTable<'static>, PhysFrame<Size4KiB>) {
+    let new_pml4_frame = alloc_frame().expect("failed to allocate frame for process PML4");
+    let new_pml4_phys = new_pml4_frame.start_address();
+    let new_pml4_virt = hhdm_base + new_pml4_phys.as_u64();
+    let new_pml4_ptr: *mut PageTable = new_pml4_virt.as_mut_ptr();
+
+    // Need to zero out new page table
+    (*new_pml4_ptr).zero();
+
+    // Copy higher half kernel mappings
+    let kernel_pml4: &PageTable = kernel_pt.level_4_table();
+    for i in 256..511 {
+        (*new_pml4_ptr)[i] = kernel_pml4[i].clone();
+    }
+
+    (
+        OffsetPageTable::new(&mut *new_pml4_ptr, hhdm_base),
+        new_pml4_frame,
+    )
+}
+
+// Writes new page table entry to cr3 to load process
+pub unsafe fn switch_to_process(process: &PCB) {
+    use x86_64::registers::control::{Cr3, Cr3Flags};
+    Cr3::write(process.pml4_frame, Cr3Flags::empty());
+    serial_println!("Switched to process page table: PID {}", process.pid);
 }

@@ -228,12 +228,11 @@ extern "C" fn kmain() -> ! {
         }
     }
 
-    let proc = create_process();
+    // This loads in the binary and creates a process
+    let proc = create_process(BINARY, &mut mapper, hhdm_offset);
     serial_println!("Created process with PID: {}", proc.pid);
     print_process_table();
 
-    // Load in a binary right after the kernel
-    load_elf(BINARY, &mut mapper);
     serial_println!("BSP entering idle loop");
     idle_loop();
 }

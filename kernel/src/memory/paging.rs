@@ -16,7 +16,7 @@ pub unsafe fn init(hhdm_base: VirtAddr) -> OffsetPageTable<'static> {
 }
 
 /// activates pml4
-unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
+pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
     use x86_64::registers::control::Cr3;
 
     let (level_4_table_frame, _) = Cr3::read();
