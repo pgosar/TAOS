@@ -11,3 +11,4 @@ spin = "0.9.8"
 uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
 talc = "4.4.2"
+goblin = {version = "0.9.3", default-features = false, features = ["alloc", "elf64", "elf32", "endian_fd"]}

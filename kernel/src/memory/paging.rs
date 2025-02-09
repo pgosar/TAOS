@@ -1,9 +1,12 @@
 use x86_64::{
-    structures::paging::{Mapper, OffsetPageTable, Page, PageTable, Size4KiB},
+    structures::paging::{Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
-use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
+use crate::{
+    memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+    serial_println,
+};
 
 /// initializes vmem system. activates pml4 and sets up page tables
 pub unsafe fn init(hhdm_base: VirtAddr) -> OffsetPageTable<'static> {
@@ -26,10 +29,17 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 }
 
 /// Creates an example mapping, in unsafe
-pub fn create_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
+/// Default flags: PRESENT | WRITABLE
+pub fn create_mapping(
+    page: Page,
+    mapper: &mut impl Mapper<Size4KiB>,
+    override_flags: Option<PageTableFlags>,
+) {
     use x86_64::structures::paging::PageTableFlags as Flags;
 
-    let flags = Flags::PRESENT | Flags::WRITABLE;
+    let default_flags = Flags::PRESENT | Flags::WRITABLE;
+    let flags = override_flags.unwrap_or(default_flags);
+
     let frame = alloc_frame().expect("no more frames");
 
     let map_to_result = unsafe {

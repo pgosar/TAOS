@@ -149,7 +149,7 @@ extern "C" fn kmain() -> ! {
 
     // test mapping
     let page = Page::containing_address(VirtAddr::new(0xb8000));
-    paging::create_mapping(page, &mut mapper);
+    paging::create_mapping(page, &mut mapper, None);
 
     let addresses = [
         // the identity-mapped vga buffer page
@@ -181,7 +181,7 @@ extern "C" fn kmain() -> ! {
     let alloc_dealloc_addr = VirtAddr::new(0x12515);
     let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
     serial_println!("Mapping a new page");
-    paging::create_mapping(new_page, &mut mapper);
+    paging::create_mapping(new_page, &mut mapper, None);
 
     let phys = mapper
         .translate_addr(alloc_dealloc_addr)
@@ -232,7 +232,7 @@ extern "C" fn kmain() -> ! {
     serial_println!("Created process with PID: {}", proc.pid);
 
     // Load in a binary right after the kernel
-    //load_binary(hhdm_offset, &mut mapper);
+    load_binary(hhdm_offset, &mut mapper);
     serial_println!("BSP entering idle loop");
     idle_loop();
 }
