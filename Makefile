@@ -4,16 +4,28 @@ override MAKEFLAGS += -rR
 override IMAGE_NAME := taos
 
 UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Linux)
-QEMU_MACHINE = -M q35,accel=kvm
-else
-QEMU_MACHINE = -M q35,accel=hvf
-endif
+UNAME_P := $(shell uname -p)
 
 # QEMU configuration
+ifeq ($(UNAME_S),Linux)
+QEMU_MACHINE = -M q35,accel=kvm
+else 
+ifeq ($(UNAME_P),x86_64)
+QEMU_MACHINE = -M q35,accel=hvf
+else
+QEMU_MACHINE = -M q35
+endif
+endif
+
 QEMU := qemu-system-x86_64
 QEMU_MEMORY := -m 4G
+ifeq ($(UNAME_P),x86_64)
 QEMU_CPU := -smp 2 -cpu host,+x2apic,+invtsc
+endif
+ifneq ($(filter arm%,$(UNAME_P)),)
+QEMU_CPU := -smp 2 -cpu Conroe-v1,+x2apic,+invtsc
+endif
+
 QEMU_NET := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 QEMU_AUDIO := -device intel-hda -device hda-duplex
 QEMU_GRAPHICS := -vga std
