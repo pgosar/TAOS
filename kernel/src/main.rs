@@ -57,6 +57,7 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 static BOOT_COMPLETE: AtomicBool = AtomicBool::new(false);
+static MEMORY_SETUP: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 
  // ASYNC
@@ -226,6 +227,8 @@ extern "C" fn kmain() -> ! {
         }
     }
 
+    MEMORY_SETUP.store(true, Ordering::SeqCst);
+
     // ASYNC
     let mut runner = event::EventRunner::init();
     runner.schedule(event::print_nums_after_rand_delay(0x1332));
@@ -255,9 +258,28 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     }
 
     idt::enable();
-    serial_println!("AP {} entering idle loop", cpu.id);
 
-    idle_loop();
+    // To avoid constant page faults
+    while !MEMORY_SETUP.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
+    }
+
+    let x: Box<i32> = Box::new(10);
+    serial_println!(
+        "AP {} Heap object allocated at: {:p}",
+        cpu.id,
+        Box::as_ref(&x) as *const i32
+    );
+
+    // ASYNC
+    let mut runner = event::EventRunner::init();
+    runner.schedule(test_event(100));
+
+    serial_println!("AP {} entering event loop", cpu.id);
+    runner.run_loop();
+
+    // serial_println!("AP {} entering idle loop", cpu.id);
+    // idle_loop();
 }
 
 #[panic_handler]
