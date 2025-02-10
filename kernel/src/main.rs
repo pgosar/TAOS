@@ -10,6 +10,7 @@ use limine::response::MemoryMapResponse;
 use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
+use taos::events::futures::print_nums_after_rand_delay;
 use taos::interrupts::{gdt, idt, x2apic};
 use x86_64::VirtAddr;
 
@@ -27,7 +28,7 @@ use taos::{
         heap, paging,
     },
     serial_println,
-    events::event
+    events::EventRunner
 };
 
 #[used]
@@ -218,15 +219,14 @@ extern "C" fn kmain() -> ! {
     idt::enable();
 
     // ASYNC
-    let mut runner = event::EventRunner::init();
-    runner.schedule(event::print_nums_after_rand_delay(0x1332));
-
-    runner.schedule(event::print_nums_after_rand_delay(0x532));
-    runner.schedule(test_event_two_blocks(400));
-    runner.schedule(test_event(100));
+    let mut runner = EventRunner::init();
+    runner.priority_schedule(print_nums_after_rand_delay(0x1332), 3);
+    runner.priority_schedule(print_nums_after_rand_delay(0x532), 2);
+    runner.priority_schedule(test_event_two_blocks(400), 0);
+    runner.priority_schedule(test_event(100), 3);
 
     serial_println!("BSP entering event loop");
-    runner.run_loop();
+    runner.run_loop()
 
     // serial_println!("BSP entering idle loop");
     // idle_loop();
@@ -260,11 +260,11 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     );
 
     // ASYNC
-    let mut runner = event::EventRunner::init();
+    let mut runner = EventRunner::init();
     runner.schedule(test_event(100));
 
     serial_println!("AP {} entering event loop", cpu.id);
-    runner.run_loop();
+    runner.run_loop()
 
     // serial_println!("AP {} entering idle loop", cpu.id);
     // idle_loop();
