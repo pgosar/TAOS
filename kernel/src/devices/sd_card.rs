@@ -6,6 +6,7 @@ use x86_64::{
 use crate::{
     debug_println,
     devices::pci::{write_pci_command, COMMAND_BUS_MASTER, COMMAND_MEMORY_SPACE},
+    filesys::{BlockDevice, FsError},
     memory::paging,
 };
 use bitflags::bitflags;
@@ -147,6 +148,50 @@ const SD_NO_DMA_INTERFACE: u8 = 0x0;
 const SD_DMA_INTERFACE: u8 = 0x1;
 const MAX_ITERATIONS: usize = 1_000;
 const SD_BLOCK_SIZE: u32 = 512;
+
+impl BlockDevice for SDCardInfo {
+    fn read_block(&self, block_num: u64, buf: &mut [u8]) -> Result<(), FsError> {
+        if block_num > self.total_blocks {
+            return Result::Err(FsError::IOError);
+        }
+        let data = read_sd_card(
+            &self,
+            block_num
+                .try_into()
+                .expect("Maxumum block number should not be greater than 32 bits"),
+        )
+        .map_err(|_| FsError::IOError)?;
+        buf.copy_from_slice(&data);
+
+        return Result::Ok(());
+    }
+
+    fn write_block(&mut self, block_num: u64, buf: &[u8]) -> Result<(), FsError> {
+        debug_println!("Write block called, for blaock num {block_num}");
+        if block_num > self.total_blocks {
+            return Result::Err(FsError::IOError);
+        }
+        let mut data: [u8; 512] = [0; 512];
+        data.copy_from_slice(buf);
+        write_sd_card(
+            &self,
+            block_num
+                .try_into()
+                .expect("Maximum block number should not be greater than 32 bits"),
+            data,
+        )
+        .map_err(|_| FsError::IOError)?;
+        return Result::Ok(());
+    }
+    fn block_size(&self) -> usize {
+        return SD_BLOCK_SIZE.try_into().expect("To be on 64 bit system");
+    }
+
+    fn total_blocks(&self) -> u64 {
+        return 512;
+        return self.total_blocks;
+    }
+}
 
 /// Finds the FIRST device that represents an SD card, or returns None if
 /// this was not found. Most functions take in SDCard Info struct, which
@@ -422,18 +467,21 @@ fn get_full_sd_card_info(
     let c_size: u32 = (csd >> 62 & 0xFFF)
         .try_into()
         .expect("Higher bits should be masked out");
-    let max_block_len: u32 = (csd >> 80 & 0xF)
-        .try_into()
-        .expect("Higher bits to be masked out");
+    // let max_block_len: u32 = (csd >> 22 & 0xF)
+    //     .try_into()
+    //     .expect("Higher bits to be masked out");
     let c_size_mult: u32 = (csd >> 47 & 0b111)
         .try_into()
         .expect("Higher bits to be masked out");
 
     let mult = 1 << (c_size_mult + 2);
     let block_number = (c_size + 1) * mult;
-    let block_length = 1 << max_block_len;
+    // let block_length = 1 << max_block_len;
+    let block_length = SD_BLOCK_SIZE;
     let conversion_to_512_byte_blocks = block_length / SD_BLOCK_SIZE;
     let actual_block_number = block_number * conversion_to_512_byte_blocks;
+    // TODO deternube wgy block length is wrong
+    debug_println!("mult = {mult}, block_no = {block_number}, conversion = {conversion_to_512_byte_blocks} block_length = {block_length}");
 
     let info = SDCardInfo {
         internal_info: sd_card.clone(),
@@ -580,7 +628,7 @@ fn determine_sd_card_response(
 }
 
 /// Reads data from a sd card
-pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCardError> {
+pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCardError> {
     let internal_info = &sd_card.internal_info;
     let block_size_register_addr = (internal_info.base_address_register + 0x4) as *mut u16;
     unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };
@@ -588,7 +636,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCa
     unsafe { core::ptr::write_volatile(block_count_register_addr, 1) };
     sending_command_valid(&internal_info)?;
     let argument_register_addr = (internal_info.base_address_register + 0x8) as *mut u32;
-    unsafe { core::ptr::write_volatile(argument_register_addr, block) };
+    unsafe { core::ptr::write_volatile(argument_register_addr, block * SD_BLOCK_SIZE) };
     let transfer_mode_register_adder = (internal_info.base_address_register + 0xC) as *mut u16;
     unsafe {
         core::ptr::write_volatile(
@@ -628,14 +676,11 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u32; 128], SDCa
         data[i] = unsafe { core::ptr::read_volatile(buffer_data_port_reg_addr) };
     }
 
-    return Result::Ok(data);
+    let new_data = unsafe { core::mem::transmute(data) };
+    return Result::Ok(new_data);
 }
 
-pub fn write_sd_card(
-    sd_card: &SDCardInfo,
-    block: u32,
-    data: [u32; 128],
-) -> Result<(), SDCardError> {
+pub fn write_sd_card(sd_card: &SDCardInfo, block: u32, data: [u8; 512]) -> Result<(), SDCardError> {
     let internal_info = &sd_card.internal_info;
     let block_size_register_addr = (internal_info.base_address_register + 0x4) as *mut u16;
     unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };
@@ -643,7 +688,7 @@ pub fn write_sd_card(
     unsafe { core::ptr::write_volatile(block_count_register_addr, 1) };
     sending_command_valid(internal_info)?;
     let argument_register_addr = (internal_info.base_address_register + 0x8) as *mut u32;
-    unsafe { core::ptr::write_volatile(argument_register_addr, block) };
+    unsafe { core::ptr::write_volatile(argument_register_addr, block * SD_BLOCK_SIZE) };
     let transfer_mode_register_adder = (internal_info.base_address_register + 0xC) as *mut u16;
     unsafe { core::ptr::write_volatile(transfer_mode_register_adder, 0) };
 
@@ -673,10 +718,11 @@ pub fn write_sd_card(
         return Result::Err(SDCardError::SDTimeout);
     }
 
+    let data_32_bits: [u32; 128] = unsafe { core::mem::transmute(data) };
     let buffer_data_port_reg_addr = (internal_info.base_address_register + 0x20) as *mut u32;
     for i in 0..128 {
         unsafe {
-            core::ptr::write_volatile(buffer_data_port_reg_addr, data[i]);
+            core::ptr::write_volatile(buffer_data_port_reg_addr, data_32_bits[i]);
         }
     }
 

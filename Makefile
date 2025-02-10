@@ -61,39 +61,39 @@ all-hdd: $(IMAGE_NAME).hdd
 run: run-gui
 
 .PHONY: run-gui
-run-gui: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+run-gui: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso blank_drive
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI)
 
 .PHONY: debug-sd 
-debug-sd: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+debug-sd: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso blank_drive
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) --trace "sd*"
 
 .PHONY: run-term
-run-term: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+run-term: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso blank_drive
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM)
 
 .PHONY: run-hdd-gui
-run-hdd-gui: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
+run-hdd-gui: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd blank_drive
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI)
 
 .PHONY: run-hdd-term
-run-hdd-term: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
+run-hdd-term: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd blank_drive
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_TERM)
 
 .PHONY: run-bios
-run-bios: $(IMAGE_NAME).iso
+run-bios: $(IMAGE_NAME).iso blank_drive
 	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI)
 
 .PHONY: run-hdd-bios
-run-hdd-bios: $(IMAGE_NAME).hdd
+run-hdd-bios: $(IMAGE_NAME).hdd blank_drive
 	$(QEMU) $(QEMU_BIOS) $(QEMU_BOOT_HDD) $(QEMU_DISPLAY_GUI)
 
 # Debug targets
-.PHONY: gdb-gui
+.PHONY: gdb-gui blank_drive
 gdb-gui: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_GUI) $(QEMU_GDB)
 
-.PHONY: gdb-term
+.PHONY: gdb-term blank_drive
 gdb-term: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
 	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) $(QEMU_GDB)
 

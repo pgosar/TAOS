@@ -1,3 +1,5 @@
+use crate::debug_println;
+
 use super::*;
 use alloc::collections::BinaryHeap;
 use alloc::vec;
@@ -114,7 +116,6 @@ impl<'a> Fat16<'a> {
         for i in 0..root_dir_sectors {
             device.write_block(root_dir_start + i as u64, &zero_block)?;
         }
-
         Fat16::new(device)
     }
 

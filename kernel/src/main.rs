@@ -130,17 +130,18 @@ extern "C" fn kmain() -> ! {
         None => Option::None,
         Some(sd_card) => initalize_sd_card(sd_card, &mut mapper).ok(),
     };
-    let data_to_write: [u32; 128] = [255; 128];
-    if let Option::Some(sd_card) = sd_card_struct {
-        write_sd_card(&sd_card, 1, data_to_write).unwrap();
-        let data = read_sd_card(&sd_card, 1);
-        match data {
-            Err(_) => serial_println!("Failed to read data"),
-            Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
-        }
-    }
+    // let data_to_write: [u8; 512] = [255; 512];
+    // if let Option::Some(sd_card) = sd_card_struct {
+    //     write_sd_card(&sd_card, 1, data_to_write).unwrap();
+    //     let data = read_sd_card(&sd_card, 1);
+    //     match data {
+    //         Err(_) => serial_println!("Failed to read data"),
+    //         Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
+    //     }
+    // }
 
-    let device = Box::new(MemoryBlockDevice::new(512, 512));
+    // let device = Box::new(MemoryBlockDevice::new(512, 512));
+    let device = Box::new(sd_card_struct.unwrap());
 
     // Format the filesystem
     let mut fs = Fat16::format(device).expect("Failed to format filesystem");
