@@ -11,12 +11,14 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::interrupts::{gdt, idt, x2apic};
-use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
 extern crate alloc;
 use alloc::boxed::Box;
 
+use taos::filesys::block::memory::MemoryBlockDevice;
+use taos::filesys::fat16::Fat16;
+use taos::filesys::{FileSystem, SeekFrom};
 use taos::{
     idle_loop,
     memory::{
@@ -125,8 +127,6 @@ extern "C" fn kmain() -> ! {
     BOOT_COMPLETE.store(true, Ordering::SeqCst);
     serial_println!("All CPUs initialized");
 
-    idt::enable();
-
     // set up page tables
     // get hhdm offset
     let memory_map_response: &MemoryMapResponse = MEMORY_MAP_REQUEST
@@ -145,89 +145,77 @@ extern "C" fn kmain() -> ! {
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
-    // test mapping
-    let page = Page::containing_address(VirtAddr::new(0xb8000));
-
-    paging::create_mapping(page, &mut mapper);
-
-    let addresses = [
-        // the identity-mapped vga buffer page
-        0xb8000, 0x201008,
-    ];
-    for &address in &addresses {
-        let phys = mapper.translate_addr(VirtAddr::new(address));
-        serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
-    }
-
-    // testing that the heap allocation works
     heap::init_heap(&mut mapper).expect("heap initialization failed");
-    let x: Box<i32> = Box::new(10);
-    let y: Box<i32> = Box::new(20);
-    let z: Box<i32> = Box::new(30);
-    serial_println!(
-        "Heap object allocated at: {:p}",
-        Box::as_ref(&x) as *const i32
-    );
-    serial_println!(
-        "Heap object allocated at: {:p}",
-        Box::as_ref(&y) as *const i32
-    );
-    serial_println!(
-        "Heap object allocated at: {:p}",
-        Box::as_ref(&z) as *const i32
-    );
 
-    let alloc_dealloc_addr = VirtAddr::new(0x12515);
-    let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
-    serial_println!("Mapping a new page");
-    paging::create_mapping(new_page, &mut mapper);
+    let device = Box::new(MemoryBlockDevice::new(512, 512));
 
-    let phys = mapper
-        .translate_addr(alloc_dealloc_addr)
-        .expect("Translation failed");
-    // A downside of the current approach is that it is difficult to get the
-    // specific methods that are a part of any allocator. Here is an example
-    // on how to do this.
-    {
-        let mut alloc = FRAME_ALLOCATOR.lock();
-        match *alloc {
-            Some(GlobalFrameAllocator::Bitmap(ref mut bitmap_alloc)) => {
-                serial_println!(
-                    "{:?} -> {:?}, and the frame is {}",
-                    alloc_dealloc_addr,
-                    phys,
-                    bitmap_alloc.is_frame_used(PhysFrame::containing_address(phys))
-                );
-            }
-            _ => panic!("Bitmap alloc expected here"),
-        }
-    }
+    // Format the filesystem
+    let mut fs = Fat16::format(device).expect("Failed to format filesystem");
 
-    serial_println!("Now unmapping the page");
-    paging::remove_mapping(new_page, &mut mapper);
-    match mapper.translate_addr(alloc_dealloc_addr) {
-        Some(phys_addr) => {
-            serial_println!("Mapping still exists at physical address: {:?}", phys_addr);
-        }
-        None => {
-            serial_println!("Translation failed, as expected");
-        }
-    }
+    // Test directory operations
+    fs.create_dir("/test_dir")
+        .expect("Failed to create directory");
+    fs.create_dir("/test_dir/subdir")
+        .expect("Failed to create subdirectory");
 
-    {
-        let alloc = FRAME_ALLOCATOR.lock();
-        match *alloc {
-            Some(GlobalFrameAllocator::Boot(ref _boot_alloc)) => {
-                serial_println!("Boot frame allocator in use");
-            }
-            Some(GlobalFrameAllocator::Bitmap(ref _bitmap_alloc)) => {
-                serial_println!("Bitmap frame allocator in use");
-            }
-            _ => panic!("Unknown frame allocator"),
-        }
-    }
+    // Create a test file
+    fs.create_file("/test_dir/test.txt")
+        .expect("FailedBlockDevice to create file");
+    let fd = fs
+        .open_file("/test_dir/test.txt")
+        .expect("Failed to open file");
+
+    // Write test data
+    let test_data = b"Hello, TaOS FAT16!";
+    let written = fs.write_file(fd, test_data).expect("Failed to write");
+    assert_eq!(written, test_data.len(), "Write length mismatch");
+
+    fs.seek_file(fd, SeekFrom::Start(0))
+        .expect("Failed to seek to start");
+    let mut read_buf = [0u8; 32];
+    let read = fs.read_file(fd, &mut read_buf).expect("Failed to read");
+    assert_eq!(read, test_data.len(), "Read length mismatch");
+    assert_eq!(&read_buf[..read], test_data, "Read data mismatch");
+
+    // List directory contents
+    let entries = fs.read_dir("/test_dir").expect("Failed to read directory");
+    assert!(!entries.is_empty(), "Directory should not be empty");
+    assert_eq!(entries.len(), 2, "Directory should have exactly 2 entries"); // subdir and test.txt
+
+    // Check file metadata
+    let metadata = fs
+        .metadata("/test_dir/test.txt")
+        .expect("Failed to get metadata");
+    assert_eq!(metadata.size, test_data.len() as u64, "File size mismatch");
+    assert!(!metadata.is_dir, "Should not be a directory");
+
+    // Test partial reads
+    fs.seek_file(fd, SeekFrom::Start(7))
+        .expect("Failed to seek");
+    let mut partial_buf = [0u8; 4];
+    let read = fs.read_file(fd, &mut partial_buf).expect("Failed to read");
+    assert_eq!(read, 4, "Partial read length mismatch");
+    assert_eq!(&partial_buf[..read], b"TaOS", "Partial read data mismatch");
+
+    // // Close file and test removal
+    fs.close_file(fd);
+
+    fs.remove_file("/test_dir/test.txt")
+        .expect("Failed to remove file");
+    fs.remove_dir("/test_dir/subdir")
+        .expect("Failed to remove subdirectory");
+    fs.remove_dir("/test_dir")
+        .expect("Failed to remove directory");
+
+    // Verify root is empty
+    let root_entries = fs.read_dir("/").expect("Failed to read root directory");
+    assert_eq!(root_entries.len(), 0, "Root directory should be empty");
+
+    serial_println!("FAT16 filesystem test passed!");
 
     MEMORY_SETUP.store(true, Ordering::SeqCst);
+
+    idt::enable();
 
     // ASYNC
     let mut runner = event::EventRunner::init();

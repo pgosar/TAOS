@@ -15,7 +15,7 @@ use futures::task::{waker_ref, ArcWake};
 use alloc::collections::BTreeSet;
 use crossbeam_queue::ArrayQueue;
 
-use crate::constants::events::MAX_EVENTS;
+use crate::constants::events::{MAX_EVENTS, NUM_EVENT_PRIORITIES};
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,7 +42,7 @@ impl Event {
     Event {
         eid: EventId::init(),
         future: Mutex::new(Box::pin(future)),
-        rewake_queue: rewake_queue
+        rewake_queue
     }
   }
 }
@@ -58,7 +58,7 @@ impl ArcWake for Event {
 }
 
 pub struct EventRunner {
-  event_queue: EventQueue,
+  event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
   rewake_queue: EventQueue,
   pending_events: BTreeSet<u64>
 }
@@ -66,7 +66,7 @@ pub struct EventRunner {
 impl EventRunner {
   pub fn init() -> EventRunner {
     EventRunner {
-      event_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
+      event_queues: core::array::from_fn(|_| Arc::new(ArrayQueue::new(MAX_EVENTS))),
       rewake_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
       pending_events: BTreeSet::new()
     }
@@ -75,7 +75,8 @@ impl EventRunner {
   pub fn run_loop(&mut self) -> ! {
     loop {
       while !self.pending_events.is_empty() {
-        let potential_event = if !self.rewake_queue.is_empty() { self.rewake_queue.pop() } else { self.event_queue.pop() };
+        let potential_event = 
+          if !self.rewake_queue.is_empty() { self.rewake_queue.pop() } else { self.event_queues[0].pop() };
 
         let event = potential_event.expect("Have pending events, but empty waiting queues.");
         if self.pending_events.contains(&event.eid.0) {
@@ -95,7 +96,7 @@ impl EventRunner {
           drop(future_guard);
     
           if !ready {
-            let r: Result<(), Arc<Event>> = self.event_queue.push(event.clone());
+            let r: Result<(), Arc<Event>> = self.event_queues[0].push(event.clone());
             match r {
               Err(_) => {panic!("Event queue full!")}
               Ok(_) => (),
@@ -113,7 +114,7 @@ impl EventRunner {
   }
 
   pub fn run(&mut self) {
-    while let Some(event) = self.event_queue.pop() {
+    while let Some(event) = self.event_queues[0].pop() {
       if self.pending_events.contains(&event.eid.0) {
         let waker = waker_ref(&event);
         let mut context: Context<'_> = Context::from_waker(&waker);
@@ -133,7 +134,7 @@ impl EventRunner {
         drop(future_guard);
   
         if !ready {
-          let r: Result<(), Arc<Event>> = self.event_queue.push(event.clone());
+          let r: Result<(), Arc<Event>> = self.event_queues[0].push(event.clone());
           match r {
             Err(_) => {panic!("Event queue full!")}
             Ok(_) => (),
@@ -147,7 +148,7 @@ impl EventRunner {
 
   pub fn schedule(&mut self, future: impl Future<Output = ()> + 'static + Send) {
     let arc = Arc::new(Event::init(future, self.rewake_queue.clone()));
-    let r = self.event_queue.push(arc.clone());
+    let r = self.event_queues[0].push(arc.clone());
     match r {
       Err(_) => {panic!("Event queue full!");}
       Ok(_) => {self.pending_events.insert(arc.eid.0);},
