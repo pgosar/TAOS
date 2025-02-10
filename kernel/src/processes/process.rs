@@ -52,9 +52,10 @@ pub fn print_process_table() {
 
     for (pid, pcb) in table.iter() {
         serial_println!(
-            "PID {}: State: {:?}, SP: {:#x}, PC: {:#x}",
+            "PID {}: State: {:?}, Registers: {:?}, SP: {:#x}, PC: {:#x}",
             pid,
             pcb.state,
+            pcb.registers,
             pcb.stack_pointer,
             pcb.program_counter
         );
@@ -72,7 +73,7 @@ pub fn create_process(
     let (mut process_mapper, process_pml4_frame) =
         unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
-    let (stack_top, entry_point) = load_elf(elf_bytes, kernel_mapper);
+    let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper);
     let process = Arc::new(PCB {
         pid,
         state: ProcessState::New,
@@ -101,15 +102,10 @@ pub unsafe fn create_process_page_table(
 
     // Copy higher half kernel mappings
     let kernel_pml4: &PageTable = kernel_pt.level_4_table();
-    for i in 256..511 {
+    // FIXME: really this should only be 256..512 but why does that page fault and this works
+    for i in 0..512 {
         (*new_pml4_ptr)[i] = kernel_pml4[i].clone();
     }
-
-    // Recursive mapping to walk page table in the process address space
-    (*new_pml4_ptr)[511].set_addr(
-        new_pml4_phys,
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-    );
 
     (
         OffsetPageTable::new(&mut *new_pml4_ptr, hhdm_base),
