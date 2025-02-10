@@ -16,30 +16,37 @@ pub struct BootIntoFrameAllocator {
     first_frame: Option<PhysFrame>,
     last_frame: Option<PhysFrame>,
     allocated_count: usize,
+    kernel_start: u64,
+    kernel_end: u64,
 }
 
 impl BootIntoFrameAllocator {
-    pub unsafe fn init(memory_map: &'static MemoryMapResponse) -> Self {
+    pub unsafe fn init(
+        memory_map: &'static MemoryMapResponse,
+        kernel_start: u64,
+        kernel_end: u64,
+    ) -> Self {
         BootIntoFrameAllocator {
             memory_map,
             next: 0,
             first_frame: None,
             last_frame: None,
             allocated_count: 0,
+            kernel_start,
+            kernel_end,
         }
     }
 
     /// scan memory map and map only frames we know we can use
-    pub fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+    pub fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> + '_ {
         self.memory_map
             .entries()
-            .iter()
+            .into_iter()
             .filter(|r| r.entry_type == EntryType::USABLE)
-            .map(|r| r.base..=r.base + r.length)
-            .flat_map(|r| r.step_by(4096))
+            .flat_map(|r| (r.base..(r.base + r.length)).step_by(4096))
+            .filter(move |&addr| addr < self.kernel_start || addr >= self.kernel_end)
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
     }
-
     /// gets the frame of a specific physical memory access
     pub fn get_frame(&mut self, addr: u64) -> PhysFrame {
         PhysFrame::containing_address(PhysAddr::new(addr))

@@ -10,7 +10,7 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::PrivilegeLevel;
 use x86_64::VirtAddr;
 
-use crate::constants::gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE};
+use crate::constants::gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE, RING0_STACK_SIZE};
 use crate::constants::MAX_CORES;
 
 const BASE_ENTRIES: usize = 5; // Null + kernel code/data + user code/data
@@ -19,21 +19,27 @@ const GDT_ENTRIES: usize = BASE_ENTRIES + TSS_ENTRIES_PER_CORE * MAX_CORES;
 
 lazy_static! {
     static ref TSSS: [TaskStateSegment; MAX_CORES] = {
-        static mut STACKS: [[u8; IST_STACK_SIZE]; MAX_CORES] = [[0; IST_STACK_SIZE]; MAX_CORES];
+        static mut DF_STACKS: [[u8; IST_STACK_SIZE]; MAX_CORES] = [[0; IST_STACK_SIZE]; MAX_CORES];
+        static mut PRIV_STACKS: [[u8; RING0_STACK_SIZE]; MAX_CORES] = [[0; RING0_STACK_SIZE]; MAX_CORES];
+
         let mut tsss = [TaskStateSegment::new(); MAX_CORES];
 
         for (i, tss) in tsss.iter_mut().enumerate() {
             unsafe {
-                let stack_start = VirtAddr::from_ptr(&STACKS[i]);
+                let stack_start = VirtAddr::from_ptr(&DF_STACKS[i]);
                 let stack_end = stack_start + IST_STACK_SIZE as u64;
+                //
+                let priv_stack_start = VirtAddr::from_ptr(&PRIV_STACKS[i]);
+                let priv_stack_end = priv_stack_start + RING0_STACK_SIZE as u64;
 
                 tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = stack_end;
+                tss.privilege_stack_table[0] = priv_stack_end;
             }
         }
         tsss
     };
 
-    static ref GDT: (GlobalDescriptorTable<GDT_ENTRIES>, Selectors) = {
+    pub static ref GDT: (GlobalDescriptorTable<GDT_ENTRIES>, Selectors) = {
         let mut gdt = GlobalDescriptorTable::<GDT_ENTRIES>::empty();
 
         // Add segments
@@ -59,11 +65,11 @@ lazy_static! {
 }
 
 #[derive(Debug)]
-struct Selectors {
+pub struct Selectors {
     code_selector: SegmentSelector,
     data_selector: SegmentSelector,
-    user_code_selector: SegmentSelector,
-    user_data_selector: SegmentSelector,
+    pub user_code_selector: SegmentSelector,
+    pub user_data_selector: SegmentSelector,
     tss_selectors: [SegmentSelector; MAX_CORES],
 }
 

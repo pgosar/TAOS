@@ -2,13 +2,14 @@ extern crate alloc;
 
 use crate::memory::frame_allocator::alloc_frame;
 use crate::processes::loader::load_elf;
+use crate::interrupts::gdt;
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 use x86_64::{
-    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
+    structures::{gdt::GlobalDescriptorTable, paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB}},
     VirtAddr,
 };
 
@@ -70,10 +71,11 @@ pub fn create_process(
 ) -> Arc<PCB> {
     let pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
 
+    // build a new process address space
     let (mut process_mapper, process_pml4_frame) =
         unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
-    let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper);
+    let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper, kernel_mapper);
     let process = Arc::new(PCB {
         pid,
         state: ProcessState::New,
@@ -83,8 +85,8 @@ pub fn create_process(
         pml4_frame: process_pml4_frame,
     });
 
+
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-    unsafe { run_process(&process) };
     process
 }
 
@@ -102,12 +104,9 @@ pub unsafe fn create_process_page_table(
 
     // Copy higher half kernel mappings
     let kernel_pml4: &PageTable = kernel_pt.level_4_table();
-    // FIXME: really this should only be 256..512 but why does that page fault and this works
     for i in 256..512 {
         (*new_pml4_ptr)[i] = kernel_pml4[i].clone();
     }
-
-    Cr3::write(new_pml4_frame, Cr3Flags::empty());
 
     (
         OffsetPageTable::new(&mut *new_pml4_ptr, hhdm_base),
@@ -128,4 +127,40 @@ unsafe fn run_process(process: &PCB) -> ! {
     loop {
         asm!("hlt");
     }
+}
+
+// run a process in ring 3
+pub unsafe fn run_process_ring3(process: &PCB) {
+    Cr3::write(process.pml4_frame, Cr3Flags::empty());
+
+    let rflags: u64 = 0x202;
+
+    let user_cs = gdt::GDT.1.user_code_selector.0;
+    let user_ds = gdt::GDT.1.user_data_selector.0;
+
+    asm!(
+        // Stack layout:
+        // SS
+        // RSP
+        // RFLAGS
+        // User CS
+        // RIP
+
+        "push {ss}",
+        "push {userrsp}",
+        "push {rflags}",
+        "push {cs}",
+        "push {rip}",
+
+        "iretq",
+
+        ss = in(reg) (user_ds as u64),
+        userrsp = in(reg) process.stack_pointer,
+        rflags = in(reg) rflags,
+        cs = in(reg) (user_cs as u64),
+        rip = in(reg) process.program_counter,
+
+        // No direct outputs, we never return
+        options(noreturn)
+    )
 }

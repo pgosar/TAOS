@@ -13,9 +13,9 @@ use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
 use taos::interrupts::{gdt, idt, x2apic};
 use taos::processes::{
     loader::load_elf,
-    process::{create_process, print_process_table, PROCESS_TABLE},
+    process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
 };
-use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate, PageTableFlags};
 use x86_64::VirtAddr;
 
 extern crate alloc;
@@ -30,6 +30,14 @@ use taos::{
     },
     serial_println,
 };
+
+use x86_64::{
+    structures::paging::PageTable,
+    PhysAddr,
+};
+use taos::memory::paging::{active_level_4_table}; // Adjust based on your imports
+use x86_64::registers::control::Cr3;
+
 
 #[used]
 #[link_section = ".requests"]
@@ -129,6 +137,9 @@ extern "C" fn kmain() -> ! {
         serial_println!("virtual kernel end address: {:#X}", _kernel_end);
     }
 
+    let physical_kernel_end =
+        unsafe { ((_kernel_end) - virtual_kernel_address) + physical_kernel_address };
+
     // set up page tables
     // get hhdm offset
     let memory_map_response: &MemoryMapResponse = MEMORY_MAP_REQUEST
@@ -142,22 +153,19 @@ extern "C" fn kmain() -> ! {
     unsafe {
         *FRAME_ALLOCATOR.lock() = Some(GlobalFrameAllocator::Boot(BootIntoFrameAllocator::init(
             memory_map_response,
+            physical_kernel_address,
+            physical_kernel_end,
         )));
     }
 
     let mut mapper = unsafe { paging::init(hhdm_offset) };
+    use x86_64::registers::model_specific::{Efer, EferFlags};
 
-    // test mapping
-    let page = Page::containing_address(VirtAddr::new(0xb8000));
-    paging::create_mapping(page, &mut mapper);
-
-    let addresses = [
-        // the identity-mapped vga buffer page
-        0xb8000, 0x201008,
-    ];
-    for &address in &addresses {
-        let phys = mapper.translate_addr(VirtAddr::new(address));
-        serial_println!("{:?} -> {:?}", VirtAddr::new(address), phys);
+    unsafe {
+        // Must be done after enabling long mode + paging
+        Efer::update(|flags| {
+            flags.insert(EferFlags::NO_EXECUTE_ENABLE);
+        });
     }
 
     // testing that the heap allocation works
@@ -181,7 +189,7 @@ extern "C" fn kmain() -> ! {
     let alloc_dealloc_addr = VirtAddr::new(0x12515);
     let new_page: Page<Size4KiB> = Page::containing_address(alloc_dealloc_addr);
     serial_println!("Mapping a new page");
-    paging::create_mapping(new_page, &mut mapper);
+    paging::create_mapping(new_page, &mut mapper, None);
 
     let phys = mapper
         .translate_addr(alloc_dealloc_addr)
@@ -232,6 +240,8 @@ extern "C" fn kmain() -> ! {
     let proc = create_process(BINARY, &mut mapper, hhdm_offset);
     serial_println!("Created process with PID: {}", proc.pid);
     print_process_table();
+
+    unsafe { run_process_ring3(&proc) };
 
     serial_println!("BSP entering idle loop");
     idle_loop();
