@@ -8,7 +8,7 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 use x86_64::{
-    structures::paging::{Mapper, OffsetPageTable, PageTable, PageTableFlags, PhysFrame, Size4KiB},
+    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
     VirtAddr,
 };
 
@@ -84,7 +84,7 @@ pub fn create_process(
     });
 
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-    //unsafe { switch_to_process(&process) };
+    //unsafe { run_process(&process) };
     process
 }
 
@@ -114,8 +114,17 @@ pub unsafe fn create_process_page_table(
 }
 
 // Writes new page table entry to cr3 to load process
-pub unsafe fn switch_to_process(process: &PCB) {
-    use x86_64::registers::control::{Cr3, Cr3Flags};
+use core::arch::asm;
+use x86_64::registers::control::{Cr3, Cr3Flags};
+
+unsafe fn run_process(process: &PCB) -> ! {
     Cr3::write(process.pml4_frame, Cr3Flags::empty());
-    serial_println!("Switched to process page table: PID {}", process.pid);
+    serial_println!("RUNNING PROCESS!");
+    asm!("mov rsp, {}", in(reg) process.stack_pointer);
+    asm!("jmp {}", in(reg) process.program_counter);
+
+    // Should never reach
+    loop {
+        asm!("hlt");
+    }
 }
