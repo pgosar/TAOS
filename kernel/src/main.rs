@@ -74,13 +74,13 @@ async fn test_sum(start: u64) -> u64 {
 
 async fn test_event(arg1: u64) {
     let tv = test_sum(arg1).await;
-    serial_println!("Event result: {}", tv);
+    serial_println!("Long event result: {}", tv);
 }
 
 async fn test_event_two_blocks(arg1: u64) {
     let tv = test_sum(arg1).await;
     let tv2 = test_sum(arg1*2).await;
-    serial_println!("Event results: {} {}", tv, tv2);
+    serial_println!("Long events results: {} {}", tv, tv2);
 }
 
 #[no_mangle]
@@ -233,10 +233,12 @@ extern "C" fn kmain() -> ! {
     runner.schedule(event::print_nums_after_rand_delay(0x532));
     runner.schedule(test_event_two_blocks(400));
     runner.schedule(test_event(100));
-    runner.run();
 
-    serial_println!("BSP entering idle loop");
-    idle_loop();
+    serial_println!("BSP entering event loop");
+    runner.run_loop();
+
+    // serial_println!("BSP entering idle loop");
+    // idle_loop();
 }
 
 #[no_mangle]

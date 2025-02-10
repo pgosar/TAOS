@@ -1,6 +1,7 @@
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use x86_64::instructions::hlt;
 
 use core::task::{Context, Poll, Waker};
 use core::{future::Future, pin::Pin};
@@ -11,6 +12,7 @@ use spin::Mutex;
 use futures::future;
 use futures::task::{waker_ref, ArcWake};
 
+use alloc::collections::BTreeSet;
 use crossbeam_queue::ArrayQueue;
 
 use crate::constants::events::MAX_EVENTS;
@@ -32,77 +34,123 @@ type EventQueue = Arc<ArrayQueue<Arc<Event>>>;
 struct Event {
   eid: EventId,
   future: SyncFuture,
-  event_queue: EventQueue
+  rewake_queue: EventQueue
 }
 
 impl Event {
-  fn init(future: impl Future<Output = ()> + 'static + Send, event_queue: EventQueue) -> Event {
+  fn init(future: impl Future<Output = ()> + 'static + Send, rewake_queue: EventQueue) -> Event {
     Event {
         eid: EventId::init(),
         future: Mutex::new(Box::pin(future)),
-        event_queue: event_queue
+        rewake_queue: rewake_queue
     }
   }
 }
 
-pub struct EventRunner {
-  event_queue: EventQueue,
-}
-
 impl ArcWake for Event {
     fn wake_by_ref(arc: &Arc<Self>) {
-      // let r: Result<(), Arc<Event>> = arc.event_queue.push(arc.clone());
-      // match r {
-      //   Err(_) => {serial_println!("Event queue full!")}
-      //   Ok(_) => {serial_println!("Awaken {:?}", arc.eid)},
-      // }
-      // serial_println!("Awaken {}", arc.eid.0);
+      let r: Result<(), Arc<Event>> = arc.rewake_queue.push(arc.clone());
+      match r {
+        Err(_) => {panic!("Event queue full!")}
+        Ok(_) => {},
+      }
     }
+}
+
+pub struct EventRunner {
+  event_queue: EventQueue,
+  rewake_queue: EventQueue,
+  pending_events: BTreeSet<u64>
 }
 
 impl EventRunner {
   pub fn init() -> EventRunner {
     EventRunner {
       event_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
+      rewake_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
+      pending_events: BTreeSet::new()
+    }
+  }
+
+  pub fn run_loop(&mut self) -> ! {
+    loop {
+      while !self.pending_events.is_empty() {
+        let potential_event = if !self.rewake_queue.is_empty() { self.rewake_queue.pop() } else { self.event_queue.pop() };
+
+        let event = potential_event.expect("Have pending events, but empty waiting queues.");
+        if self.pending_events.contains(&event.eid.0) {
+          let waker = waker_ref(&event);
+          let mut context: Context<'_> = Context::from_waker(&waker);
+    
+          let mut future_guard = event.future.lock();
+    
+          let ready: bool = match future_guard.as_mut().poll(&mut context) {
+            Poll::Pending => {
+              false
+            },
+            Poll::Ready(()) => {
+              true}
+          };
+    
+          drop(future_guard);
+    
+          if !ready {
+            let r: Result<(), Arc<Event>> = self.event_queue.push(event.clone());
+            match r {
+              Err(_) => {panic!("Event queue full!")}
+              Ok(_) => (),
+            }
+          } else {
+            self.pending_events.remove(&event.eid.0);
+          }
+        }
+      }
+
+      // TODO do a lil work-stealing
+
+      hlt();
     }
   }
 
   pub fn run(&mut self) {
     while let Some(event) = self.event_queue.pop() {
-      let waker = waker_ref(&event);
-      let mut context: Context<'_> = Context::from_waker(&waker);
-
-      let mut future_guard = event.future.lock();
-
-      let ready: bool = match future_guard.as_mut().poll(&mut context) {
-        Poll::Pending => {
-          serial_println!("Pending {:?}", event.eid); 
-          false
-        },
-        Poll::Ready(()) => {
-          serial_println!("Ready {:?}", event.eid); 
-          true}
-      };
-
-      drop(future_guard);
-
-      if !ready {
-        let r: Result<(), Arc<Event>> = self.event_queue.push(event.clone());
-        match r {
-          Err(_) => {serial_println!("Event queue full!")}
-          Ok(_) => (),
+      if self.pending_events.contains(&event.eid.0) {
+        let waker = waker_ref(&event);
+        let mut context: Context<'_> = Context::from_waker(&waker);
+  
+        let mut future_guard = event.future.lock();
+  
+        let ready: bool = match future_guard.as_mut().poll(&mut context) {
+          Poll::Pending => {
+            // serial_println!("Pending {:?}", event.eid); 
+            false
+          },
+          Poll::Ready(()) => {
+            // serial_println!("Ready {:?}", event.eid); 
+            true}
+        };
+  
+        drop(future_guard);
+  
+        if !ready {
+          let r: Result<(), Arc<Event>> = self.event_queue.push(event.clone());
+          match r {
+            Err(_) => {panic!("Event queue full!")}
+            Ok(_) => (),
+          }
+        } else {
+          self.pending_events.remove(&event.eid.0);
         }
       }
     }
   }
 
   pub fn schedule(&mut self, future: impl Future<Output = ()> + 'static + Send) {
-    let r = self.event_queue.push(
-      Arc::new(Event::init(future, self.event_queue.clone()))
-    );
+    let arc = Arc::new(Event::init(future, self.rewake_queue.clone()));
+    let r = self.event_queue.push(arc.clone());
     match r {
-      Err(_) => {serial_println!("Event queue full!")}
-      Ok(_) => (),
+      Err(_) => {panic!("Event queue full!");}
+      Ok(_) => {self.pending_events.insert(arc.eid.0);},
     }
   }
 }
@@ -136,9 +184,12 @@ impl Future for RandomFuture {
     let prob: f64 = self.prob;
     let res = self.rng.gen_bool(prob);
     
-    serial_println!("RandPoll: {}", res);
     let poll = match res {
       true => {
+        match &self.waker {
+          Some(waker) => {waker.wake_by_ref();}
+          None => ()
+        };
         Poll::Ready(())
       },
       false => {
@@ -146,11 +197,7 @@ impl Future for RandomFuture {
         Poll::Pending
       }
     };
-
-    match &self.waker {
-      Some(waker) => {waker.wake_by_ref();}
-      None => ()
-    };
+    
     poll
   }
 }
@@ -165,5 +212,5 @@ async fn rand_delay(seed: u32) -> u32 {
 pub async fn print_nums_after_rand_delay(seed: u32) -> () {
   let res= future::join(rand_delay(seed), rand_delay(seed*2)).await;
 
-  serial_println!("Results: {} {}", res.0, res.1);
+  serial_println!("Random results: {} {}", res.0, res.1);
 }
