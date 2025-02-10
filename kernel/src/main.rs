@@ -126,21 +126,19 @@ extern "C" fn kmain() -> ! {
     heap::init_heap(&mut mapper).expect("heap initialization failed");
 
     let devices = walk_pci_bus();
-    let _sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
+    let sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
         None => Option::None,
         Some(sd_card) => initalize_sd_card(sd_card, &mut mapper).ok(),
     };
-    _sd_card_struct.unwrap();
     let data_to_write: [u32; 128] = [255; 128];
-    if _sd_card_struct.is_some() {
-        write_sd_card(&_sd_card_struct.unwrap(), 1, data_to_write).unwrap();
-        let data = read_sd_card(&_sd_card_struct.unwrap(), 1);
+    if let Option::Some(sd_card) = sd_card_struct {
+        write_sd_card(&sd_card, 1, data_to_write).unwrap();
+        let data = read_sd_card(&sd_card, 1);
         match data {
             Err(_) => serial_println!("Failed to read data"),
             Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
         }
     }
-
 
     let device = Box::new(MemoryBlockDevice::new(512, 512));
 
