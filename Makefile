@@ -5,16 +5,18 @@ override IMAGE_NAME := taos
 
 UNAME_S := $(shell uname -s)
 UNAME_P := $(shell uname -p)
+
+# QEMU configuration
 ifeq ($(UNAME_S),Linux)
-QEMU_MACHINE = -M q35,accel=kvm,dump-guest-core=off
+QEMU_MACHINE = -M q35,accel=kvm
 else 
 ifeq ($(UNAME_P),x86_64)
 QEMU_MACHINE = -M q35,accel=hvf
-endif
+else
 QEMU_MACHINE = -M q35
 endif
+endif
 
-# QEMU configuration
 QEMU := qemu-system-x86_64
 QEMU_MEMORY := -m 4G
 ifeq ($(UNAME_P),x86_64)

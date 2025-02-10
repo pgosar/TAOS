@@ -1,0 +1,23 @@
+#[repr(C, packed)]
+pub struct BootSector {
+    pub jump_boot: [u8; 3],
+    pub oem_name: [u8; 8],
+    pub bytes_per_sector: u16,
+    pub sectors_per_cluster: u8,
+    pub reserved_sectors: u16,
+    pub fat_count: u8,
+    pub root_dir_entries: u16,
+    pub total_sectors_16: u16,
+    pub media_type: u8,
+    pub sectors_per_fat: u16,
+    pub sectors_per_track: u16,
+    pub head_count: u16,
+    pub hidden_sectors: u32,
+    pub total_sectors_32: u32,
+    pub drive_number: u8,
+    pub reserved1: u8,
+    pub boot_signature: u8,
+    pub volume_id: u32,
+    pub volume_label: [u8; 11],
+    pub fs_type: [u8; 8],
+}
