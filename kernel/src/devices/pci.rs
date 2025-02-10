@@ -101,28 +101,44 @@ pub unsafe fn write_pci_command(bus: u8, device: u8, function: u8, command: u16)
 
 fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
     let mut config_word = unsafe { read_config(bus, device, 0, 0) };
-    let device_id: u16 = (config_word >> 16).try_into().unwrap();
-    let vendor_id: u16 = (config_word & 0x0000FFFF).try_into().unwrap();
+    let device_id: u16 = (config_word >> 16).try_into().expect("Masked out bits");
+    let vendor_id: u16 = (config_word & 0x0000FFFF)
+        .try_into()
+        .expect("Masked out bits");
 
     if vendor_id == 0xFFFF {
         return Option::None;
     }
 
     config_word = unsafe { read_config(bus, device, 0, 4) };
-    let status: u16 = (config_word >> 16).try_into().unwrap();
-    let command: u16 = (config_word & 0x0000FFFF).try_into().unwrap();
+    let status: u16 = (config_word >> 16).try_into().expect("Masked out bits");
+    let command: u16 = (config_word & 0x0000FFFF)
+        .try_into()
+        .expect("Masked out bits");
 
     config_word = unsafe { read_config(bus, device, 0, 8) };
-    let class_code: u8 = (config_word >> 24).try_into().unwrap();
-    let subclass: u8 = ((config_word & 0x00FF0000) >> 16).try_into().unwrap();
-    let programming_interface: u8 = ((config_word & 0x0000FF00) >> 8).try_into().unwrap();
-    let revision_id: u8 = (config_word & 0x000000FF).try_into().unwrap();
+    let class_code: u8 = (config_word >> 24).try_into().expect("Masked out bits");
+    let subclass: u8 = ((config_word & 0x00FF0000) >> 16)
+        .try_into()
+        .expect("Masked out bits");
+    let programming_interface: u8 = ((config_word & 0x0000FF00) >> 8)
+        .try_into()
+        .expect("Masked out bits");
+    let revision_id: u8 = (config_word & 0x000000FF)
+        .try_into()
+        .expect("Masked out bits");
 
     config_word = unsafe { read_config(bus, device, 0, 12) };
-    let built_in_self_test: u8 = (config_word >> 24).try_into().unwrap();
-    let header_type: u8 = ((config_word & 0x00FF0000) >> 16).try_into().unwrap();
-    let latency_timer: u8 = ((config_word & 0x0000FF00) >> 8).try_into().unwrap();
-    let cache_line_size: u8 = (config_word & 0x000000FF).try_into().unwrap();
+    let built_in_self_test: u8 = (config_word >> 24).try_into().expect("Masked out bits");
+    let header_type: u8 = ((config_word & 0x00FF0000) >> 16)
+        .try_into()
+        .expect("Masked out bits");
+    let latency_timer: u8 = ((config_word & 0x0000FF00) >> 8)
+        .try_into()
+        .expect("Masked out bits");
+    let cache_line_size: u8 = (config_word & 0x000000FF)
+        .try_into()
+        .expect("Masked out bits");
 
     let device_info = DeviceInfo {
         bus: bus,
@@ -143,7 +159,7 @@ fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
     return Option::Some(device_info);
 }
 
-fn print_pci_info(device: &DeviceInfo) {
+pub fn print_pci_info(device: &DeviceInfo) {
     debug_println!("----------");
     debug_println!("bus = {}", { device.bus });
     debug_println!("device = {}", { device.device });
@@ -165,10 +181,9 @@ pub fn walk_pci_bus() -> AllDeviceInfo {
     while bus < 256 {
         let mut device: u8 = 0;
         while device < 32 {
-            match device_connected(bus.try_into().unwrap(), device) {
+            match device_connected(bus.try_into().expect("Masked out bits"), device) {
                 None => (),
                 Some(device_info) => {
-                    print_pci_info(&device_info);
                     devices[connected_devices] = Some(device_info);
                     connected_devices += 1;
                 }
