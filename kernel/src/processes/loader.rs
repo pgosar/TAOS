@@ -3,7 +3,7 @@ use crate::{
     memory::paging::create_mapping,
     serial_println,
 };
-use core::arch::asm;
+use core::ptr::{copy_nonoverlapping, write_bytes};
 use goblin::{
     elf::Elf,
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
@@ -60,12 +60,12 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> (VirtAd
             // Where segment is in virtual memory
             let dest = ph.p_vaddr as *mut u8;
             let src = &elf_bytes[offset..offset + file_size];
-            core::ptr::copy_nonoverlapping(src.as_ptr(), dest, file_size);
+            copy_nonoverlapping(src.as_ptr(), dest, file_size);
 
             // BSS section should be zeroed out
             if mem_size > file_size {
                 let bss_start = dest.add(file_size);
-                core::ptr::write_bytes(bss_start, 0, mem_size - file_size);
+                write_bytes(bss_start, 0, mem_size - file_size);
             }
         }
 
@@ -102,14 +102,6 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> (VirtAd
         "Stack mapped successfully. Initial SP (stack pointer): 0x{:x}",
         stack_end.as_u64()
     );
-    //unsafe {
-    //    asm!(
-    //        "mov rsp, {}",
-    //        "jmp {}",
-    //        in(reg) stack_end.as_u64(),
-    //        in(reg) elf.header.e_entry,
-    //        options(noreturn)
-    //    );
-    //}
+
     (stack_end, elf.header.e_entry)
 }
