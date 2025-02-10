@@ -66,18 +66,18 @@ pub fn create_process(
     let (mut process_mapper, process_pml4_frame) =
         unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
+    let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper);
     let process = Arc::new(PCB {
         pid,
         state: ProcessState::New,
         registers: [0; 32],
-        stack_pointer: 0,
-        program_counter: 0,
+        stack_pointer: stack_top.as_u64(),
+        program_counter: entry_point,
         pml4_frame: process_pml4_frame,
     });
 
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-    unsafe { switch_to_process(&process) };
-    load_elf(elf_bytes, &mut process_mapper);
+    //unsafe { switch_to_process(&process) };
     process
 }
 

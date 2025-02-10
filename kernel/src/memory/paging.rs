@@ -30,15 +30,10 @@ pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static
 
 /// Creates an example mapping, in unsafe
 /// Default flags: PRESENT | WRITABLE
-pub fn create_mapping(
-    page: Page,
-    mapper: &mut impl Mapper<Size4KiB>,
-    override_flags: Option<PageTableFlags>,
-) {
+pub fn create_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
     use x86_64::structures::paging::PageTableFlags as Flags;
 
     let default_flags = Flags::PRESENT | Flags::WRITABLE;
-    let flags = override_flags.unwrap_or(default_flags);
 
     let frame = alloc_frame().expect("no more frames");
 
@@ -47,7 +42,7 @@ pub fn create_mapping(
         mapper.map_to(
             page,
             frame,
-            flags,
+            default_flags,
             FRAME_ALLOCATOR
                 .lock()
                 .as_mut()

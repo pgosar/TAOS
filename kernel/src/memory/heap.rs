@@ -29,7 +29,7 @@ pub fn init_heap(mapper: &mut impl Mapper<Size4KiB>) -> Result<(), MapToError<Si
     };
 
     for page in page_range {
-        create_mapping(page, mapper, None);
+        create_mapping(page, mapper);
     }
 
     switch_allocator();

@@ -14,7 +14,7 @@ use x86_64::{
     VirtAddr,
 };
 
-pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAddr {
+pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> (VirtAddr, u64) {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
     serial_println!(
         "ELF parsed successfully. Entry point: 0x{:x}",
@@ -53,7 +53,7 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAdd
         }
 
         for page in Page::range_inclusive(start_page, end_page) {
-            create_mapping(page, mapper, None);
+            create_mapping(page, mapper);
         }
 
         unsafe {
@@ -95,7 +95,7 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAdd
     );
 
     for page in Page::range_inclusive(start_page, end_page) {
-        create_mapping(page, mapper, None);
+        create_mapping(page, mapper);
     }
 
     serial_println!(
@@ -111,5 +111,5 @@ pub fn load_elf(elf_bytes: &[u8], mapper: &mut impl Mapper<Size4KiB>) -> VirtAdd
     //        options(noreturn)
     //    );
     //}
-    stack_end
+    (stack_end, elf.header.e_entry)
 }
