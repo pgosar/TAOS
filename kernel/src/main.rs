@@ -11,6 +11,7 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::events::futures::print_nums_after_rand_delay;
+use taos::events::{priority_schedule, register_event_runner, run_loop};
 use taos::interrupts::{gdt, idt, x2apic};
 use x86_64::VirtAddr;
 
@@ -27,8 +28,7 @@ use taos::{
         frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
         heap, paging,
     },
-    serial_println,
-    events::EventRunner
+    serial_println
 };
 
 #[used]
@@ -216,20 +216,18 @@ extern "C" fn kmain() -> ! {
 
     MEMORY_SETUP.store(true, Ordering::SeqCst);
 
+    register_event_runner(bsp_id);
+
     idt::enable();
 
     // ASYNC
-    let mut runner = EventRunner::init();
-    runner.priority_schedule(print_nums_after_rand_delay(0x1332), 3);
-    runner.priority_schedule(print_nums_after_rand_delay(0x532), 2);
-    runner.priority_schedule(test_event_two_blocks(400), 0);
-    runner.priority_schedule(test_event(100), 3);
+    priority_schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
+    priority_schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
+    priority_schedule(bsp_id, test_event_two_blocks(400), 0);
+    priority_schedule(bsp_id, test_event(100), 3);
 
     serial_println!("BSP entering event loop");
-    runner.run_loop()
-
-    // serial_println!("BSP entering idle loop");
-    // idle_loop();
+    unsafe{ run_loop(bsp_id) }
 }
 
 #[no_mangle]
@@ -260,14 +258,12 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     );
 
     // ASYNC
-    let mut runner = EventRunner::init();
-    runner.schedule(test_event(100));
+    register_event_runner(cpu.id);
+
+    priority_schedule(cpu.id, test_event(200), 1);
 
     serial_println!("AP {} entering event loop", cpu.id);
-    runner.run_loop()
-
-    // serial_println!("AP {} entering idle loop", cpu.id);
-    // idle_loop();
+    run_loop(cpu.id)
 }
 
 #[panic_handler]

@@ -77,16 +77,8 @@ impl EventRunner {
     }
   }
 
-  pub fn schedule(&mut self, future: impl Future<Output = ()> + 'static + Send) {
-    let event = Arc::new(Event::init(future, self.rewake_queue.clone(), 0));
-    let r = self.event_queues[event.priority].push(event.clone());
-    match r {
-      Err(_) => {panic!("Event queue full!");}
-      Ok(_) => {self.pending_events.insert(event.eid.0);},
-    }
-  }
-
-  pub fn priority_schedule(&mut self, future: impl Future<Output = ()> + 'static + Send, priority_level: usize) {
+  // Schedules an event with a specified priority level [0, NUM_EVENT_PRIORITIES)
+  pub fn schedule(&mut self, future: impl Future<Output = ()> + 'static + Send, priority_level: usize) {
     if priority_level >= NUM_EVENT_PRIORITIES {
       panic!("Invalid event priority: {}", priority_level);
     } else {
