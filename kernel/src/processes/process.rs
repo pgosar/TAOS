@@ -84,7 +84,7 @@ pub fn create_process(
     });
 
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-    //unsafe { run_process(&process) };
+    unsafe { run_process(&process) };
     process
 }
 
@@ -103,9 +103,11 @@ pub unsafe fn create_process_page_table(
     // Copy higher half kernel mappings
     let kernel_pml4: &PageTable = kernel_pt.level_4_table();
     // FIXME: really this should only be 256..512 but why does that page fault and this works
-    for i in 0..512 {
+    for i in 256..512 {
         (*new_pml4_ptr)[i] = kernel_pml4[i].clone();
     }
+
+    Cr3::write(new_pml4_frame, Cr3Flags::empty());
 
     (
         OffsetPageTable::new(&mut *new_pml4_ptr, hhdm_base),
@@ -118,7 +120,6 @@ use core::arch::asm;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
 unsafe fn run_process(process: &PCB) -> ! {
-    Cr3::write(process.pml4_frame, Cr3Flags::empty());
     serial_println!("RUNNING PROCESS!");
     asm!("mov rsp, {}", in(reg) process.stack_pointer);
     asm!("jmp {}", in(reg) process.program_counter);
