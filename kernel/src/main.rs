@@ -11,7 +11,7 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
 use taos::events::futures::print_nums_after_rand_delay;
-use taos::events::{schedule, register_event_runner, run_loop};
+use taos::events::{register_event_runner, run_loop, schedule};
 use taos::interrupts::{gdt, idt, x2apic};
 use taos::processes::process::{create_process, print_process_table, run_process_ring3};
 use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
@@ -30,7 +30,7 @@ use taos::{
         frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
         heap, paging,
     },
-    serial_println
+    serial_println,
 };
 
 #[used]
@@ -73,13 +73,13 @@ extern "C" {
     static _kernel_end: u64;
 }
 
- // ASYNC
+// ASYNC
 async fn test_sum(start: u64) -> u64 {
     let mut sum: u64 = start;
     const MAX: u64 = 10000000;
     for i in 0..MAX {
         sum += i;
-        if i == MAX/2 {
+        if i == MAX / 2 {
             serial_println!("Halfway through long event");
         }
     }
@@ -93,7 +93,7 @@ async fn test_event(arg1: u64) {
 
 async fn test_event_two_blocks(arg1: u64) {
     let tv = test_sum(arg1).await;
-    let tv2 = test_sum(arg1*2).await;
+    let tv2 = test_sum(arg1 * 2).await;
     serial_println!("Long events results: {} {}", tv, tv2);
 }
 
@@ -333,7 +333,6 @@ extern "C" fn kmain() -> ! {
 
     // unsafe { run_process_ring3(&proc) };
 
-
     // ASYNC
     schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
     schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
@@ -344,7 +343,7 @@ extern "C" fn kmain() -> ! {
     schedule(1, test_event(353), 1);
 
     serial_println!("BSP entering event loop");
-    unsafe{ run_loop(bsp_id) }
+    unsafe { run_loop(bsp_id) }
 }
 
 #[no_mangle]
