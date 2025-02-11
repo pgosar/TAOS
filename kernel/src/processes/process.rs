@@ -130,6 +130,7 @@ unsafe fn run_process(process: &PCB) -> ! {
 
 // run a process in ring 3
 pub unsafe fn run_process_ring3(process: &PCB) {
+    serial_println!("RUNNING PROCESS");
     Cr3::write(process.pml4_frame, Cr3Flags::empty());
 
     let rflags: u64 = 0x202;
