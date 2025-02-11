@@ -35,10 +35,11 @@ struct Event {
   priority: usize
 }
 
+#[derive(Debug)]
 struct EventRunner {
   event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
   rewake_queue: EventQueue,
-  pending_events: BTreeSet<u64>,
+  pending_events: RwLock<BTreeSet<u64>>,
 }
 
 static EVENT_RUNNERS: RwLock<BTreeMap<u32, RwLock<EventRunner>>> = RwLock::new(BTreeMap::new());
@@ -47,12 +48,13 @@ pub unsafe fn run_loop(cpuid: u32) -> ! {
   let runners = EVENT_RUNNERS.read();
   let runner = runners.get(&cpuid).expect("No runner found").as_mut_ptr();
 
-  runner.read().run_loop()
+  (*runner).run_loop()
 }
 
-pub fn priority_schedule(cpuid: u32, future: impl Future<Output = ()> + 'static + Send, priority_level: usize) {
+pub fn schedule(cpuid: u32, future: impl Future<Output = ()> + 'static + Send, priority_level: usize) {
   let runners = EVENT_RUNNERS.read();
   let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
   runner.schedule(future, priority_level);
 }
 

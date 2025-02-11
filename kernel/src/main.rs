@@ -11,7 +11,7 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::x2apic::CPU_FREQUENCY;
 use taos::events::futures::print_nums_after_rand_delay;
-use taos::events::{priority_schedule, register_event_runner, run_loop};
+use taos::events::{schedule, register_event_runner, run_loop};
 use taos::interrupts::{gdt, idt, x2apic};
 use x86_64::VirtAddr;
 
@@ -221,10 +221,13 @@ extern "C" fn kmain() -> ! {
     idt::enable();
 
     // ASYNC
-    priority_schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
-    priority_schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
-    priority_schedule(bsp_id, test_event_two_blocks(400), 0);
-    priority_schedule(bsp_id, test_event(100), 3);
+    schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
+    schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
+    schedule(bsp_id, test_event_two_blocks(400), 0);
+    schedule(bsp_id, test_event(100), 3);
+
+    // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
+    schedule(1, test_event(353), 1);
 
     serial_println!("BSP entering event loop");
     unsafe{ run_loop(bsp_id) }
@@ -260,7 +263,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     // ASYNC
     register_event_runner(cpu.id);
 
-    priority_schedule(cpu.id, test_event(200), 1);
+    schedule(cpu.id, test_event(200), 2);
 
     serial_println!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)

@@ -4,6 +4,7 @@ extern crate alloc;
 use alloc::collections::btree_set::BTreeSet;
 use alloc::sync::Arc;
 use futures::task::waker_ref;
+use spin::rwlock::RwLock;
 use x86_64::instructions::hlt;
 
 use core::{future::Future, task::{Context, Poll}};
@@ -17,7 +18,7 @@ impl EventRunner {
     EventRunner {
       event_queues: core::array::from_fn(|_| Arc::new(ArrayQueue::new(MAX_EVENTS))),
       rewake_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
-      pending_events: BTreeSet::new()
+      pending_events: RwLock::new(BTreeSet::new())
     }
   }
 
@@ -39,23 +40,28 @@ impl EventRunner {
 
   pub fn run_loop(&mut self) -> ! {
     loop {
-      while !self.pending_events.is_empty() {
+      loop {
+        {
+          let read_lock = self.pending_events.read();
+
+          if read_lock.is_empty() {
+            break;
+          }
+        }
+
         let potential_event = self.next_event();
 
         let event = potential_event.expect("Have pending events, but empty waiting queues.");
-        if self.pending_events.contains(&event.eid.0) {
+
+        let pe_read_lock = self.pending_events.read();
+        if pe_read_lock.contains(&event.eid.0) {
+          drop(pe_read_lock);
           let waker = waker_ref(&event);
           let mut context: Context<'_> = Context::from_waker(&waker);
     
           let mut future_guard = event.future.lock();
     
-          let ready: bool = match future_guard.as_mut().poll(&mut context) {
-            Poll::Pending => {
-              false
-            },
-            Poll::Ready(()) => {
-              true}
-          };
+          let ready: bool = future_guard.as_mut().poll(&mut context) != Poll::Pending;
     
           drop(future_guard);
     
@@ -66,7 +72,8 @@ impl EventRunner {
               Ok(_) => (),
             }
           } else {
-            self.pending_events.remove(&event.eid.0);
+            let mut write_lock = self.pending_events.write();
+            write_lock.remove(&event.eid.0);
           }
         }
       }
@@ -86,7 +93,10 @@ impl EventRunner {
       let r = self.event_queues[priority_level].push(arc.clone());
       match r {
         Err(_) => {panic!("Event queue full!");}
-        Ok(_) => {self.pending_events.insert(arc.eid.0);},
+        Ok(_) => {
+          let mut write_lock = self.pending_events.write();
+          write_lock.insert(arc.eid.0);
+        },
       }
     }
   }
