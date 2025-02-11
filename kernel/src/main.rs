@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![cfg_attr(feature = "strict", deny(warnings))]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::request::{
