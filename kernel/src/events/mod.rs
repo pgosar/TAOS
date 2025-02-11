@@ -15,12 +15,17 @@ mod event;
 mod event_runner;
 pub mod futures;
 
-type SyncFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;
+// Thread-safe future that remains pinned to a heap address throughout its lifetime
+type SendFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;
+
+// Thread-safe static queue of events
 type EventQueue = Arc<ArrayQueue<Arc<Event>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct EventId(u64);
 
+// Unique global ID for events. 
+// TODO this, like most globals, will likely need to change when distributed
 impl EventId {
   fn init() -> Self {
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -28,13 +33,15 @@ impl EventId {
   }
 }
 
+// Describes a future and its scheduling context
 struct Event {
   eid: EventId,
-  future: SyncFuture,
+  future: SendFuture,
   rewake_queue: EventQueue,
   priority: usize
 }
 
+// Schedules and runs events within a single core
 #[derive(Debug)]
 struct EventRunner {
   event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
@@ -42,6 +49,8 @@ struct EventRunner {
   pending_events: RwLock<BTreeSet<u64>>,
 }
 
+// Global mapping of cores to events
+// TODO will need to expand when distributed, like most globals
 static EVENT_RUNNERS: RwLock<BTreeMap<u32, RwLock<EventRunner>>> = RwLock::new(BTreeMap::new());
 
 pub unsafe fn run_loop(cpuid: u32) -> ! {
