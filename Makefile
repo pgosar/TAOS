@@ -150,12 +150,12 @@ $(IMAGE_NAME).hdd: limine/limine kernel
 
 .PHONY: blank_drive
 blank_drive:
-	dd if=/dev/zero of=$(STORAGE_NAME).img bs=1M count=256
+	dd if=/dev/zero of=$(STORAGE_NAME).img bs=1M count=4k
 
 .PHONY: clean
 clean:
 	$(MAKE) -C kernel clean
-	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
+	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd $(STORAGE_NAME).iso
 
 .PHONY: distclean
 distclean: clean
