@@ -10,6 +10,8 @@ use limine::response::MemoryMapResponse;
 use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
+use taos::events::futures::print_nums_after_rand_delay;
+use taos::events::{schedule, register_event_runner, run_loop};
 use taos::interrupts::{gdt, idt, x2apic};
 use taos::processes::process::{create_process, print_process_table, run_process_ring3};
 use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
@@ -18,6 +20,9 @@ use x86_64::VirtAddr;
 extern crate alloc;
 use alloc::boxed::Box;
 
+use taos::filesys::block::memory::MemoryBlockDevice;
+use taos::filesys::fat16::Fat16;
+use taos::filesys::{FileSystem, SeekFrom};
 use taos::{
     idle_loop,
     memory::{
@@ -25,7 +30,7 @@ use taos::{
         frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
         heap, paging,
     },
-    serial_println,
+    serial_println
 };
 
 #[used]
@@ -61,10 +66,35 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 static BOOT_COMPLETE: AtomicBool = AtomicBool::new(false);
+static MEMORY_SETUP: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
     static _kernel_end: u64;
+}
+
+ // ASYNC
+async fn test_sum(start: u64) -> u64 {
+    let mut sum: u64 = start;
+    const MAX: u64 = 10000000;
+    for i in 0..MAX {
+        sum += i;
+        if i == MAX/2 {
+            serial_println!("Halfway through long event");
+        }
+    }
+    sum
+}
+
+async fn test_event(arg1: u64) {
+    let tv = test_sum(arg1).await;
+    serial_println!("Long event result: {}", tv);
+}
+
+async fn test_event_two_blocks(arg1: u64) {
+    let tv = test_sum(arg1).await;
+    let tv2 = test_sum(arg1*2).await;
+    serial_println!("Long events results: {} {}", tv, tv2);
 }
 
 #[no_mangle]
@@ -159,6 +189,77 @@ extern "C" fn kmain() -> ! {
 
     // testing that the heap allocation works
     heap::init_heap(&mut mapper).expect("heap initialization failed");
+
+    let device = Box::new(MemoryBlockDevice::new(512, 512));
+
+    // Format the filesystem
+    let mut fs = Fat16::format(device).expect("Failed to format filesystem");
+
+    // Test directory operations
+    fs.create_dir("/test_dir")
+        .expect("Failed to create directory");
+    fs.create_dir("/test_dir/subdir")
+        .expect("Failed to create subdirectory");
+
+    // Create a test file
+    fs.create_file("/test_dir/test.txt")
+        .expect("FailedBlockDevice to create file");
+    let fd = fs
+        .open_file("/test_dir/test.txt")
+        .expect("Failed to open file");
+
+    // Write test data
+    let test_data = b"Hello, TaOS FAT16!";
+    let written = fs.write_file(fd, test_data).expect("Failed to write");
+    assert_eq!(written, test_data.len(), "Write length mismatch");
+
+    fs.seek_file(fd, SeekFrom::Start(0))
+        .expect("Failed to seek to start");
+    let mut read_buf = [0u8; 32];
+    let read = fs.read_file(fd, &mut read_buf).expect("Failed to read");
+    assert_eq!(read, test_data.len(), "Read length mismatch");
+    assert_eq!(&read_buf[..read], test_data, "Read data mismatch");
+
+    // List directory contents
+    let entries = fs.read_dir("/test_dir").expect("Failed to read directory");
+    assert!(!entries.is_empty(), "Directory should not be empty");
+    assert_eq!(entries.len(), 2, "Directory should have exactly 2 entries"); // subdir and test.txt
+
+    // Check file metadata
+    let metadata = fs
+        .metadata("/test_dir/test.txt")
+        .expect("Failed to get metadata");
+    assert_eq!(metadata.size, test_data.len() as u64, "File size mismatch");
+    assert!(!metadata.is_dir, "Should not be a directory");
+
+    // Test partial reads
+    fs.seek_file(fd, SeekFrom::Start(7))
+        .expect("Failed to seek");
+    let mut partial_buf = [0u8; 4];
+    let read = fs.read_file(fd, &mut partial_buf).expect("Failed to read");
+    assert_eq!(read, 4, "Partial read length mismatch");
+    assert_eq!(&partial_buf[..read], b"TaOS", "Partial read data mismatch");
+
+    // // Close file and test removal
+    fs.close_file(fd);
+
+    fs.remove_file("/test_dir/test.txt")
+        .expect("Failed to remove file");
+    fs.remove_dir("/test_dir/subdir")
+        .expect("Failed to remove subdirectory");
+    fs.remove_dir("/test_dir")
+        .expect("Failed to remove directory");
+
+    // Verify root is empty
+    let root_entries = fs.read_dir("/").expect("Failed to read root directory");
+    assert_eq!(root_entries.len(), 0, "Root directory should be empty");
+
+    serial_println!("FAT16 filesystem test passed!");
+
+    MEMORY_SETUP.store(true, Ordering::SeqCst);
+
+    register_event_runner(bsp_id);
+
     let x: Box<i32> = Box::new(10);
     let y: Box<i32> = Box::new(20);
     let z: Box<i32> = Box::new(30);
@@ -230,10 +331,20 @@ extern "C" fn kmain() -> ! {
     serial_println!("Created process with PID: {}", proc.pid);
     print_process_table();
 
-    unsafe { run_process_ring3(&proc) };
+    // unsafe { run_process_ring3(&proc) };
 
-    serial_println!("BSP entering idle loop");
-    idle_loop();
+
+    // ASYNC
+    schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
+    schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
+    schedule(bsp_id, test_event_two_blocks(400), 0);
+    schedule(bsp_id, test_event(100), 3);
+
+    // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
+    schedule(1, test_event(353), 1);
+
+    serial_println!("BSP entering event loop");
+    unsafe{ run_loop(bsp_id) }
 }
 
 #[no_mangle]
@@ -250,8 +361,26 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     }
 
     idt::enable();
-    serial_println!("AP {} entering idle loop", cpu.id);
-    idle_loop();
+
+    // To avoid constant page faults
+    while !MEMORY_SETUP.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
+    }
+
+    let x: Box<i32> = Box::new(10);
+    serial_println!(
+        "AP {} Heap object allocated at: {:p}",
+        cpu.id,
+        Box::as_ref(&x) as *const i32
+    );
+
+    // ASYNC
+    register_event_runner(cpu.id);
+
+    schedule(cpu.id, test_event(200), 2);
+
+    serial_println!("AP {} entering event loop", cpu.id);
+    run_loop(cpu.id)
 }
 
 #[panic_handler]
