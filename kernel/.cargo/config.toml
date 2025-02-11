@@ -7,6 +7,6 @@ build-std-features = ["compiler-builtins-mem"]
 
 [target.'cfg(target_os = "none")']
 # Limage compatibility with `cargo run`
-runner = "limage runner"
+runner = "limage run"
 # Required for Cargo to pass the correct flags to the linker before running `limage runner`
 rustflags = ["-C", "relocation-model=static", "-C", "link-arg=linker/x86_64.ld", "-C", "code-model=kernel"]

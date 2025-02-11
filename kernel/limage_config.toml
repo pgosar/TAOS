@@ -1,0 +1,38 @@
+[build]
+image_path = "target/kernel.iso"
+
+[qemu]
+binary = "qemu-system-x86_64"
+base_args = [
+    # Memory
+    "-m", "4G",
+
+    # SMP settings
+    "-smp", "2",
+
+    # Network
+    "-netdev", "user,id=net0",
+    "-device", "virtio-net-pci,netdev=net0",
+
+    # Audio
+    "-device", "intel-hda",
+    "-device", "hda-duplex",
+
+    # Graphics
+    "-vga", "std",
+
+    # Boot media and UEFI settings
+    "-cdrom", "{image}",
+    "-drive", "if=pflash,unit=0,format=raw,file={ovmf}/ovmf-code-x86_64.fd,readonly=on",
+    "-drive", "if=pflash,unit=1,format=raw,file={ovmf}/ovmf-vars-x86_64.fd"
+]
+
+[test]
+timeout_secs = 300
+success_exit_code = 33
+no_reboot = true
+extra_args = [
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-serial", "stdio",
+    "-display", "none"
+]
