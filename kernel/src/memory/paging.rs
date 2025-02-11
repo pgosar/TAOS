@@ -45,7 +45,7 @@ pub fn create_mapping(
         mapper.map_to(
             page,
             frame,
-            flags.unwrap_or(PageTableFlags::PRESENT | PageTableFlags::WRITABLE),
+            flags.unwrap_or(PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE),
             FRAME_ALLOCATOR
                 .lock()
                 .as_mut()

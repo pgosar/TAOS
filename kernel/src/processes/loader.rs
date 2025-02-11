@@ -102,7 +102,6 @@ pub fn load_elf(
                 update_permissions(page, user_mapper, flags);
             }
 
-            remove_mapping(page, user_mapper);
         }
 
         serial_println!("Segment {} loaded successfully.", i);
