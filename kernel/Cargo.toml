@@ -12,3 +12,8 @@ uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
 bitflags = "2.8.0"
 talc = "4.4.2"
+
+rand = { version = "0.8.3", features = ["small_rng"], default-features = false }
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+crossbeam-queue = { version = "0.3.12", default-features = false, features = ["alloc"] }
+arrayvec = { version = "0.7.6", default-features = false }
