@@ -4,7 +4,6 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 
 use crate::constants::idt::TIMER_VECTOR;
 use crate::interrupts::x2apic;
-use crate::memory::frame_allocator::alloc_frame;
 use crate::prelude::*;
 
 lazy_static! {
@@ -78,7 +77,7 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    use x86_64::registers::control::{Cr2, Cr3};
+    use x86_64::registers::control::Cr2;
 
     let faulting_address = Cr2::read();
 

@@ -11,11 +11,8 @@ use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
 use taos::interrupts::{gdt, idt, x2apic};
-use taos::processes::{
-    loader::load_elf,
-    process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
-};
-use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate, PageTableFlags};
+use taos::processes::process::{create_process, print_process_table, run_process_ring3};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
 extern crate alloc;
@@ -30,14 +27,6 @@ use taos::{
     },
     serial_println,
 };
-
-use x86_64::{
-    structures::paging::PageTable,
-    PhysAddr,
-};
-use taos::memory::paging::{active_level_4_table}; // Adjust based on your imports
-use x86_64::registers::control::Cr3;
-
 
 #[used]
 #[link_section = ".requests"]

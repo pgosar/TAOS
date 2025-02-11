@@ -5,10 +5,9 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR}};
+use crate::constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START;
+use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
 
-// this might be a bit hacky
-static EPHEMERAL_KERNEL_MAPPINGS_START: u64 = 0xFFFF_FF80_0000_0000;
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
 /// initializes vmem system. activates pml4 and sets up page tables

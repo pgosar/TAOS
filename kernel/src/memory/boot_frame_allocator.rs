@@ -1,5 +1,5 @@
 use crate::{
-    constants::memory::{FRAME_SIZE, MAX_ALLOCATED_FRAMES},
+    constants::memory::{FRAME_SIZE, HEAP_SIZE, HEAP_START, MAX_ALLOCATED_FRAMES},
     serial_println,
 };
 use limine::memory_map::EntryType;
@@ -41,10 +41,15 @@ impl BootIntoFrameAllocator {
     pub fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> + '_ {
         self.memory_map
             .entries()
-            .into_iter()
+            .iter()
             .filter(|r| r.entry_type == EntryType::USABLE)
             .flat_map(|r| (r.base..(r.base + r.length)).step_by(4096))
-            .filter(move |&addr| addr < self.kernel_start || addr >= self.kernel_end)
+            .filter(move |&addr| {
+                addr < self.kernel_start
+                    || addr >= self.kernel_end
+                    || addr < HEAP_START as u64
+                    || addr > (HEAP_START as u64).wrapping_add(HEAP_SIZE as u64)
+            })
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
     }
     /// gets the frame of a specific physical memory access

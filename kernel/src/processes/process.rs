@@ -1,15 +1,15 @@
 extern crate alloc;
 
+use crate::interrupts::gdt;
 use crate::memory::frame_allocator::alloc_frame;
 use crate::processes::loader::load_elf;
-use crate::interrupts::gdt;
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 use x86_64::{
-    structures::{gdt::GlobalDescriptorTable, paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB}},
+    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
     VirtAddr,
 };
 
@@ -84,7 +84,6 @@ pub fn create_process(
         program_counter: entry_point,
         pml4_frame: process_pml4_frame,
     });
-
 
     PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
     process

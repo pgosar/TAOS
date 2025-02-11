@@ -1,6 +1,9 @@
 use crate::{
-    constants::{memory::PAGE_SIZE, processes::{STACK_SIZE, STACK_START}},
-    memory::paging::{create_mapping, update_permissions},
+    constants::{
+        memory::PAGE_SIZE,
+        processes::{STACK_SIZE, STACK_START},
+    },
+    memory::paging::{create_mapping, remove_mapping, update_permissions},
     serial_println,
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};
@@ -98,6 +101,8 @@ pub fn load_elf(
             unsafe {
                 update_permissions(page, user_mapper, flags);
             }
+
+            remove_mapping(page, user_mapper);
         }
 
         serial_println!("Segment {} loaded successfully.", i);
