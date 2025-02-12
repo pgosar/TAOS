@@ -36,17 +36,18 @@ impl EventId {
 // Describes a future and its scheduling context
 struct Event {
     eid: EventId,
+    pid: u32,
     future: SendFuture,
     rewake_queue: EventQueue,
     priority: usize,
 }
 
 // Schedules and runs events within a single core
-#[derive(Debug)]
 struct EventRunner {
     event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
     rewake_queue: EventQueue,
     pending_events: RwLock<BTreeSet<u64>>,
+    current_event: Option<Arc<Event>>
 }
 
 // Global mapping of cores to events
@@ -64,11 +65,12 @@ pub fn schedule(
     cpuid: u32,
     future: impl Future<Output = ()> + 'static + Send,
     priority_level: usize,
+    pid: u32    // 0 as kernel/sentinel
 ) {
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.schedule(future, priority_level);
+    runner.schedule(future, priority_level, pid);
 }
 
 pub fn register_event_runner(cpuid: u32) {
@@ -76,4 +78,11 @@ pub fn register_event_runner(cpuid: u32) {
     let mut write_lock = EVENT_RUNNERS.write();
 
     write_lock.insert(cpuid, RwLock::new(runner));
+}
+
+pub fn current_running_event_pid(cpuid: u32) -> u32 {
+    let runners = EVENT_RUNNERS.read();
+    let runner = runners.get(&cpuid).expect("No runner found").write();
+
+    runner.current_running_event_pid()
 }

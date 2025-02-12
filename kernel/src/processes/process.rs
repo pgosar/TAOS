@@ -7,13 +7,14 @@ use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
+use spin::rwlock::RwLock;
 use x86_64::{
     structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
     VirtAddr,
 };
 
 // process counter must be thread-safe
+// PID 0 will ONLY be used for errors/PID not found
 static NEXT_PID: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,24 +26,71 @@ pub enum ProcessState {
     Terminated,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Registers {
+    pub rax: u64,
+    pub rbx: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+    pub rbp: u64,
+    pub rsp: u64,
+    pub rip: u64,
+    pub rflags: u64,
+}
+
+impl Registers {
+    pub fn new() -> Self {
+        Self {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rbp: 0,
+            rsp: 0,
+            rip: 0,
+            rflags: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PCB {
     pub pid: u32,
-    state: ProcessState,
-    registers: [u64; 32],
-    stack_pointer: u64,
-    program_counter: u64,
+    pub state: ProcessState,
+    pub registers: Arc<Registers>,
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
+
+type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<RwLock<PCB>>>>>;
 
 // global process table must be thread-safe
 lazy_static::lazy_static! {
     #[derive(Debug)]
-    pub static ref PROCESS_TABLE: Mutex<BTreeMap<u32, Arc<PCB>>> = Mutex::new(BTreeMap::new());
+    pub static ref PROCESS_TABLE: ProcessTable = Arc::new(RwLock::new(BTreeMap::new()));
 }
 
-pub fn print_process_table() {
-    let table = PROCESS_TABLE.lock();
+pub fn print_process_table(process_table: &PROCESS_TABLE) {
+    let table = process_table.read();
     serial_println!("\nProcess Table Contents:");
     serial_println!("========================");
 
@@ -52,13 +100,14 @@ pub fn print_process_table() {
     }
 
     for (pid, pcb) in table.iter() {
+        let pcb = pcb.read();
         serial_println!(
             "PID {}: State: {:?}, Registers: {:?}, SP: {:#x}, PC: {:#x}",
             pid,
             pcb.state,
             pcb.registers,
-            pcb.stack_pointer,
-            pcb.program_counter
+            pcb.registers.rsp,
+            pcb.registers.rip
         );
     }
     serial_println!("========================");
@@ -68,25 +117,44 @@ pub fn create_process(
     elf_bytes: &[u8],
     kernel_mapper: &mut OffsetPageTable<'static>,
     hhdm_offset: VirtAddr,
-) -> Arc<PCB> {
+) -> u32 {
     let pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
 
-    // build a new process address space
+    // Build a new process address space
     let (mut process_mapper, process_pml4_frame) =
         unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
     let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper, kernel_mapper);
-    let process = Arc::new(PCB {
+
+    let process = Arc::new(RwLock::new(PCB {
         pid,
         state: ProcessState::New,
-        registers: [0; 32],
-        stack_pointer: stack_top.as_u64(),
-        program_counter: entry_point,
+        registers: Arc::new(Registers {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rbp: 0,
+            rsp: stack_top.as_u64(),
+            rip: entry_point,
+            rflags: 0x202,
+        }),
         pml4_frame: process_pml4_frame,
-    });
-
-    PROCESS_TABLE.lock().insert(pid, Arc::clone(&process));
-    process
+    }));
+    let pid = process.read().pid;
+    PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
+    serial_println!("Created process with PID: {}", pid);
+    pid
 }
 
 pub unsafe fn create_process_page_table(
@@ -113,39 +181,63 @@ pub unsafe fn create_process_page_table(
     )
 }
 
-// Writes new page table entry to cr3 to load process
 use core::arch::asm;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
-unsafe fn run_process(process: &PCB) -> ! {
-    serial_println!("RUNNING PROCESS!");
-    asm!("mov rsp, {}", in(reg) process.stack_pointer);
-    asm!("jmp {}", in(reg) process.program_counter);
-
-    // Should never reach
-    loop {
-        asm!("hlt");
-    }
-}
-
 // run a process in ring 3
-pub unsafe fn run_process_ring3(process: &PCB) {
+pub async unsafe fn run_process_ring3(pid: u32) {
     serial_println!("RUNNING PROCESS");
+    let process = {
+        let process_table = PROCESS_TABLE.read();
+        let process = process_table
+            .get(&pid)
+            .expect("Could not find process from process table");
+        process.clone()
+    };
+    let process = process.read();
+
     Cr3::write(process.pml4_frame, Cr3Flags::empty());
 
-    let rflags: u64 = 0x202;
+    let user_cs = gdt::GDT.1.user_code_selector.0 as u64;
+    let user_ds = gdt::GDT.1.user_data_selector.0 as u64;
 
-    let user_cs = gdt::GDT.1.user_code_selector.0;
-    let user_ds = gdt::GDT.1.user_data_selector.0;
+    let registers = &process.registers.clone();
+    drop(process);
 
     asm!(
-        // Stack layout:
-        // SS
-        // RSP
-        // RFLAGS
-        // User CS
-        // RIP
+        "mov rax, {rax}",
+        "mov rbx, {rbx}",
+        "mov rcx, {rcx}",
+        "mov rdx, {rdx}",
+        "mov rsi, {rsi}",
+        "mov rdi, {rdi}",
+        "mov r8, {r8}",
+        "mov r9, {r9}",
+        "mov r10, {r10}",
+        "mov r11, {r11}",
+        "mov r12, {r12}",
+        "mov r13, {r13}",
+        "mov r14, {r14}",
+        "mov r15, {r15}",
 
+        rax = in(reg) registers.rax,
+        rbx = in(reg) registers.rbx,
+        rcx = in(reg) registers.rcx,
+        rdx = in(reg) registers.rdx,
+        rsi = in(reg) registers.rsi,
+        rdi = in(reg) registers.rdi,
+        r8 = in(reg) registers.r8,
+        r9 = in(reg) registers.r9,
+        r10 = in(reg) registers.r10,
+        r11 = in(reg) registers.r11,
+        r12 = in(reg) registers.r12,
+        r13 = in(reg) registers.r13,
+        r14 = in(reg) registers.r14,
+        r15 = in(reg) registers.r15,
+    );
+
+    asm!(
+        // Stack layout for returning to user mode:
         "push {ss}",
         "push {userrsp}",
         "push {rflags}",
@@ -154,13 +246,10 @@ pub unsafe fn run_process_ring3(process: &PCB) {
 
         "iretq",
 
-        ss = in(reg) (user_ds as u64),
-        userrsp = in(reg) process.stack_pointer,
-        rflags = in(reg) rflags,
-        cs = in(reg) (user_cs as u64),
-        rip = in(reg) process.program_counter,
-
-        // No direct outputs, we never return
-        options(noreturn)
-    )
+        ss = in(reg) user_ds,
+        userrsp = in(reg) registers.rsp,
+        rflags = in(reg) registers.rflags,
+        cs = in(reg) user_cs,
+        rip = in(reg) registers.rip,
+    );
 }

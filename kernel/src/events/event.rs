@@ -16,9 +16,11 @@ impl Event {
         future: impl Future<Output = ()> + 'static + Send,
         rewake_queue: EventQueue,
         priority: usize,
+        pid: u32
     ) -> Event {
         Event {
             eid: EventId::init(),
+            pid: pid,
             future: Mutex::new(Box::pin(future)),
             rewake_queue,
             priority,

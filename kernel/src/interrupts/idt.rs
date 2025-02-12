@@ -1,10 +1,14 @@
+use alloc::sync::Arc;
 use lazy_static::lazy_static;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::constants::idt::TIMER_VECTOR;
+use crate::events::current_running_event_pid;
 use crate::interrupts::x2apic;
 use crate::prelude::*;
+use crate::processes::process::{print_process_table, run_process_ring3, Registers, PROCESS_TABLE};
+use spin::rwlock::RwLock;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -92,5 +96,64 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(_: InterruptStackFrame) {
+    // SAVE REGISTERS VALUES FIRST
+    let rax = unsafe {
+        let mut rax: u32 = 129387942;
+        core::arch::asm!(
+            "mov {}, rax",
+            out(reg) rax,
+        );
+
+        rax
+    };
+
+    // Get event from CPU ID (from event runner)
+    let cpuid: u32 = x2apic::current_core_id() as u32;
+
+    if cpuid == 0 {
+        serial_println!("{:#X}", rax);
+    }
+
+    // Get PID from event
+    let pid = current_running_event_pid(cpuid);
+
+    if pid == 0 {
+        x2apic::send_eoi();
+        return;
+    }
+
+    serial_println!("Interrupt process {} on {}", pid, cpuid);
+
+    // // Get PCB from PID
+    let mut process_table = PROCESS_TABLE.write();
+    serial_println!("Interrupt process {}", pid);
+
+    let process = process_table.get_mut(&pid).expect("Process not found");
+    let mut pcb = process.write();
+
+    let regs = unsafe {
+        let regs = Arc::make_mut(&mut pcb.registers);
+        serial_println!("Current registers are {:#X?}", regs);
+        core::arch::asm!(
+            "mov {}, rax",
+            out(reg) regs.rax,
+        );
+        serial_println!("The RAX value is {:#X}", regs.rax);
+
+        regs
+    };
+
+
+    // // Choose next process to run
+    // let next_pid = schedule_next_process();
+
+    // // Run the next process
+    // let next_proc = process_table
+    //     .get(&next_pid)
+    //     .expect("Next process not found");
+    // unsafe {
+    //     run_process_ring3(next_pid, next_proc.registers);
+    // }
+
     x2apic::send_eoi();
 }

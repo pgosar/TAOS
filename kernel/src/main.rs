@@ -13,7 +13,9 @@ use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
 use taos::events::futures::print_nums_after_rand_delay;
 use taos::events::{register_event_runner, run_loop, schedule};
 use taos::interrupts::{gdt, idt, x2apic};
-use taos::processes::process::{create_process, print_process_table, run_process_ring3};
+use taos::processes::process::{
+    create_process, print_process_table, run_process_ring3, PROCESS_TABLE,
+};
 use x86_64::structures::paging::{Page, PhysFrame, Size4KiB, Translate};
 use x86_64::VirtAddr;
 
@@ -326,24 +328,24 @@ extern "C" fn kmain() -> ! {
         }
     }
 
-    // This loads in the binary and creates a process
-    let proc = create_process(BINARY, &mut mapper, hhdm_offset);
-    serial_println!("Created process with PID: {}", proc.pid);
-    print_process_table();
-
-    // unsafe { run_process_ring3(&proc) };
-
     // ASYNC
-    schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3);
-    schedule(bsp_id, print_nums_after_rand_delay(0x532), 2);
-    schedule(bsp_id, test_event_two_blocks(400), 0);
-    schedule(bsp_id, test_event(100), 3);
+    schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3, 0);
+    schedule(bsp_id, print_nums_after_rand_delay(0x532), 2, 0);
+    schedule(bsp_id, test_event_two_blocks(400), 0, 0);
+    schedule(bsp_id, test_event(100), 3, 0);
 
-    // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
-    schedule(1, test_event(353), 1);
+    // // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
+    schedule(1, test_event(353), 1, 0);
 
-    serial_println!("BSP entering event loop");
-    unsafe { run_loop(bsp_id) }
+    // serial_println!("BSP entering event loop");
+
+    // This loads in the binary and creates a process
+    let pid = create_process(BINARY, &mut mapper, hhdm_offset);
+    print_process_table(&PROCESS_TABLE);
+    unsafe { schedule(bsp_id, run_process_ring3(pid), 0, pid) };
+
+    unsafe { run_loop(bsp_id) };
+    // idle_loop();
 }
 
 #[no_mangle]
@@ -376,7 +378,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     // ASYNC
     register_event_runner(cpu.id);
 
-    schedule(cpu.id, test_event(200), 2);
+    schedule(cpu.id, test_event(200), 2, 0);
 
     serial_println!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)

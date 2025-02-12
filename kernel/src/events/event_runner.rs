@@ -22,6 +22,7 @@ impl EventRunner {
             event_queues: core::array::from_fn(|_| Arc::new(ArrayQueue::new(MAX_EVENTS))),
             rewake_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
             pending_events: RwLock::new(BTreeSet::new()),
+            current_event: None
         }
     }
 
@@ -54,8 +55,9 @@ impl EventRunner {
 
                 let potential_event = self.next_event();
 
-                let event =
-                    potential_event.expect("Have pending events, but empty waiting queues.");
+                self.current_event = potential_event;
+
+                let event = self.current_event.as_ref().expect("Have a pending event, but empty waiting queues");
 
                 let pe_read_lock = self.pending_events.read();
                 if pe_read_lock.contains(&event.eid.0) {
@@ -83,6 +85,8 @@ impl EventRunner {
                         write_lock.remove(&event.eid.0);
                     }
                 }
+
+                self.current_event = None;
             }
 
             // TODO do a lil work-stealing
@@ -96,6 +100,7 @@ impl EventRunner {
         &mut self,
         future: impl Future<Output = ()> + 'static + Send,
         priority_level: usize,
+        pid: u32
     ) {
         if priority_level >= NUM_EVENT_PRIORITIES {
             panic!("Invalid event priority: {}", priority_level);
@@ -104,6 +109,7 @@ impl EventRunner {
                 future,
                 self.rewake_queue.clone(),
                 priority_level,
+                pid
             ));
             let r = self.event_queues[priority_level].push(arc.clone());
             match r {
@@ -115,6 +121,13 @@ impl EventRunner {
                     write_lock.insert(arc.eid.0);
                 }
             }
+        }
+    }
+
+    pub fn current_running_event_pid(&self) -> u32 {
+        match self.current_event.as_ref() {
+            Some(event) => event.pid,
+            None => 0
         }
     }
 }
