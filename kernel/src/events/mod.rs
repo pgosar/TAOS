@@ -84,5 +84,39 @@ pub fn current_running_event_pid(cpuid: u32) -> u32 {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.current_running_event_pid()
+    match runner.current_running_event() {
+        Some(e) => e.pid,
+        None => 0
+    }
+}
+
+pub fn current_running_event_priority(cpuid: u32) -> usize {
+    let runners = EVENT_RUNNERS.read();
+    let runner = runners.get(&cpuid).expect("No runner found").write();
+
+    match runner.current_running_event() {
+        Some(e) => e.priority,
+        None => NUM_EVENT_PRIORITIES-1
+    }
+}
+
+pub struct EventInfo {
+    pub priority: usize,
+    pub pid: u32,
+}
+
+pub fn current_running_event_info(cpuid: u32) -> EventInfo {
+    let runners = EVENT_RUNNERS.read();
+    let runner = runners.get(&cpuid).expect("No runner found").write();
+
+    match runner.current_running_event() {
+        Some(e) => EventInfo {
+            priority: e.priority,
+            pid: e.pid
+        },
+        None => EventInfo {
+            priority: NUM_EVENT_PRIORITIES-1,
+            pid: 0
+        }
+    }
 }

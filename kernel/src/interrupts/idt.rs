@@ -4,11 +4,11 @@ use x86_64::instructions::interrupts;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::constants::idt::TIMER_VECTOR;
-use crate::events::current_running_event_pid;
+use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
-use crate::prelude::*;
-use crate::processes::process::{print_process_table, run_process_ring3, Registers, PROCESS_TABLE};
-use spin::rwlock::RwLock;
+use crate::processes::process::{resume_process, PROCESS_TABLE};
+use crate::processes::registers::Registers;
+use crate::{prelude::*, push_registers, pop_registers};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -95,65 +95,42 @@ extern "x86-interrupt" fn page_fault_handler(
     panic!("PAGE FAULT!");
 }
 
-extern "x86-interrupt" fn timer_handler(_: InterruptStackFrame) {
+extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     // SAVE REGISTERS VALUES FIRST
-    let rax = unsafe {
-        let mut rax: u32 = 129387942;
-        core::arch::asm!(
-            "mov {}, rax",
-            out(reg) rax,
-        );
+    push_registers!();
+    let mut regs = Registers::new();
+    pop_registers!(regs);
+    regs.rax = stack_frame.stack_pointer.as_u64();
+    regs.rip = stack_frame.instruction_pointer.as_u64();
+    regs.rflags = stack_frame.cpu_flags.bits();
 
-        rax
-    };
-
-    // Get event from CPU ID (from event runner)
+    // Get PID from Event from CPU ID
     let cpuid: u32 = x2apic::current_core_id() as u32;
+    let event: EventInfo = current_running_event_info(cpuid);
 
-    if cpuid == 0 {
-        serial_println!("{:#X}", rax);
-    }
-
-    // Get PID from event
-    let pid = current_running_event_pid(cpuid);
-
-    if pid == 0 {
+    if event.pid == 0 {
         x2apic::send_eoi();
         return;
+    } else if event.pid == 1 {
+        serial_println!("Current {:?}", regs);
+        panic!();
     }
 
-    serial_println!("Interrupt process {} on {}", pid, cpuid);
+    serial_println!("Interrupt process {} on {}", event.pid, cpuid);
 
     // // Get PCB from PID
     let mut process_table = PROCESS_TABLE.write();
-    serial_println!("Interrupt process {}", pid);
+    serial_println!("Interrupt process {}", event.pid);
 
-    let process = process_table.get_mut(&pid).expect("Process not found");
+    let process = process_table
+        .get_mut(&event.pid)
+        .expect("Process not found");
     let mut pcb = process.write();
 
-    let regs = unsafe {
-        let regs = Arc::make_mut(&mut pcb.registers);
-        serial_println!("Current registers are {:#X?}", regs);
-        core::arch::asm!(
-            "mov {}, rax",
-            out(reg) regs.rax,
-        );
-        serial_println!("The RAX value is {:#X}", regs.rax);
+    // save to the PCB
+    pcb.registers = Arc::new(regs);
 
-        regs
-    };
-
-
-    // // Choose next process to run
-    // let next_pid = schedule_next_process();
-
-    // // Run the next process
-    // let next_proc = process_table
-    //     .get(&next_pid)
-    //     .expect("Next process not found");
-    // unsafe {
-    //     run_process_ring3(next_pid, next_proc.registers);
-    // }
-
+    // Restore kernel RSP + PC -> RIP from where it stored in run/resume process
+    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
     x2apic::send_eoi();
 }

@@ -5,7 +5,7 @@ use alloc::collections::btree_set::BTreeSet;
 use alloc::sync::Arc;
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
-use x86_64::instructions::hlt;
+use x86_64::instructions::interrupts;
 
 use core::{
     future::Future,
@@ -67,7 +67,17 @@ impl EventRunner {
 
                     let mut future_guard = event.future.lock();
 
+                    // Disable interrupts when running non-preemptible kernel events
+                    // Prevents kernel stack from dealing with "recursive" interrupt handling
+                    // Interrupt "handling" will require "atomically" (at least w/o interrupts)
+                    //      scheduling actual handlers onto this event runner
+                    if event.pid == 0 {
+                        interrupts::disable();
+                    }
                     let ready: bool = future_guard.as_mut().poll(&mut context) != Poll::Pending;
+                    if event.pid == 0 {
+                        interrupts::enable();
+                    }
 
                     drop(future_guard);
 
@@ -91,7 +101,7 @@ impl EventRunner {
 
             // TODO do a lil work-stealing
 
-            hlt();
+            interrupts::enable_and_hlt();
         }
     }
 
@@ -124,10 +134,7 @@ impl EventRunner {
         }
     }
 
-    pub fn current_running_event_pid(&self) -> u32 {
-        match self.current_event.as_ref() {
-            Some(event) => event.pid,
-            None => 0
-        }
+    pub fn current_running_event(&self) -> Option<&Arc<Event>> {
+        self.current_event.as_ref()
     }
 }

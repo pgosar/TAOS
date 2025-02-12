@@ -2,12 +2,13 @@ extern crate alloc;
 
 use crate::interrupts::gdt;
 use crate::memory::frame_allocator::alloc_frame;
-use crate::processes::loader::load_elf;
+use crate::processes::{loader::load_elf, registers::Registers};
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::rwlock::RwLock;
+use x86_64::instructions::interrupts;
 use x86_64::{
     structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
     VirtAddr,
@@ -26,62 +27,17 @@ pub enum ProcessState {
     Terminated,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Registers {
-    pub rax: u64,
-    pub rbx: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-    pub rbp: u64,
-    pub rsp: u64,
-    pub rip: u64,
-    pub rflags: u64,
-}
-
-impl Registers {
-    pub fn new() -> Self {
-        Self {
-            rax: 0,
-            rbx: 0,
-            rcx: 0,
-            rdx: 0,
-            rsi: 0,
-            rdi: 0,
-            r8: 0,
-            r9: 0,
-            r10: 0,
-            r11: 0,
-            r12: 0,
-            r13: 0,
-            r14: 0,
-            r15: 0,
-            rbp: 0,
-            rsp: 0,
-            rip: 0,
-            rflags: 0,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct PCB {
     pub pid: u32,
     pub state: ProcessState,
+    pub kernel_rsp: u64,
+    pub kernel_rip: u64,
     pub registers: Arc<Registers>,
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
 
-type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<RwLock<PCB>>>>>;
+type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<PCB>>>>;
 
 // global process table must be thread-safe
 lazy_static::lazy_static! {
@@ -100,7 +56,6 @@ pub fn print_process_table(process_table: &PROCESS_TABLE) {
     }
 
     for (pid, pcb) in table.iter() {
-        let pcb = pcb.read();
         serial_println!(
             "PID {}: State: {:?}, Registers: {:?}, SP: {:#x}, PC: {:#x}",
             pid,
@@ -129,6 +84,8 @@ pub fn create_process(
     let process = Arc::new(RwLock::new(PCB {
         pid,
         state: ProcessState::New,
+        kernel_rsp: 0,
+        kernel_rip: 0,
         registers: Arc::new(Registers {
             rax: 0,
             rbx: 0,
@@ -154,6 +111,7 @@ pub fn create_process(
     let pid = process.read().pid;
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
     serial_println!("Created process with PID: {}", pid);
+    // schedule process (call from main)
     pid
 }
 
@@ -186,6 +144,7 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 
 // run a process in ring 3
 pub async unsafe fn run_process_ring3(pid: u32) {
+    interrupts::disable();
     serial_println!("RUNNING PROCESS");
     let process = {
         let process_table = PROCESS_TABLE.read();
@@ -194,6 +153,10 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             .expect("Could not find process from process table");
         process.clone()
     };
+
+    // Do not lock lowest common denominator
+    // Once kernel threads are in, will need lock around PCB
+    // But not TCB
     let process = process.read();
 
     Cr3::write(process.pml4_frame, Cr3Flags::empty());
@@ -202,6 +165,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     let user_ds = gdt::GDT.1.user_data_selector.0 as u64;
 
     let registers = &process.registers.clone();
+    // let kernel_rip = &mut process.kernel_rip as *mut u64;
     drop(process);
 
     asm!(
@@ -236,20 +200,40 @@ pub async unsafe fn run_process_ring3(pid: u32) {
         r15 = in(reg) registers.r15,
     );
 
-    asm!(
-        // Stack layout for returning to user mode:
-        "push {ss}",
-        "push {userrsp}",
-        "push {rflags}",
-        "push {cs}",
-        "push {rip}",
+    // Stack layout to move into user mode
+    unsafe {
+        asm!(
+            "push {ss}",
+            "push {userrsp}",
+            "push {rflags}",
+            "push {cs}",
+            "push {rip}",
+            // "mov [{pcb_pc}], 2f",
 
-        "iretq",
+            "sti",
 
-        ss = in(reg) user_ds,
-        userrsp = in(reg) registers.rsp,
-        rflags = in(reg) registers.rflags,
-        cs = in(reg) user_cs,
-        rip = in(reg) registers.rip,
-    );
+            "iretq",
+            "2:", // will store program counter to return back to scheduling code
+            "nop",
+
+            ss = in(reg) user_ds,
+            userrsp = in(reg) registers.rsp,
+            rflags = in(reg) registers.rflags,
+            cs = in(reg) user_cs,
+            rip = in(reg) registers.rip,
+
+            // pcb_pc = in(reg) kernel_rip
+        );
+    }
+
+    // rust compiler generates this by default
+    // The address of this will be program counter + 4 from the iretq instruction in the load registers macro
+    // return Poll::Ready(())
+    serial_println!("Returned from process")
 }
+
+// resume_process() {
+// restores process state from pcb
+// calls iretq stuff, pushing stuff onto the stack the same as run_process
+//}
+pub async fn resume_process(pid: u32) {}
