@@ -13,7 +13,7 @@ use crate::{
     filesys::{BlockDevice, FsError},
     memory::paging,
 };
-use bitflags::{bitflags, Flag};
+use bitflags::bitflags;
 
 use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
 
@@ -191,7 +191,7 @@ impl BlockDevice for SDCardInfo {
     }
 
     fn total_blocks(&self) -> u64 {
-        return 512;
+        return 1024;
         return self.total_blocks;
     }
 }
@@ -239,8 +239,6 @@ pub unsafe fn initalize_sd_card(
     // Determine the Base Address, and setup a mapping
     let base_address_register = unsafe { read_config(sd_card.bus, sd_card.device, 0, 0x10) };
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
-    let bar_frame: PhysFrame<Size4KiB> =
-        PhysFrame::from_start_address(PhysAddr::new(bar_address)).unwrap();
 
     let offset_bar = bar_address + offset;
     let translate_result = mapper.translate(VirtAddr::new(offset_bar));
