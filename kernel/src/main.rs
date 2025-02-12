@@ -25,7 +25,6 @@ use taos::filesys::block::memory::MemoryBlockDevice;
 use taos::filesys::fat16::Fat16;
 use taos::filesys::{FileSystem, SeekFrom};
 use taos::{
-    idle_loop,
     memory::{
         boot_frame_allocator::BootIntoFrameAllocator,
         frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
@@ -99,6 +98,9 @@ extern "C" fn _start() -> ! {
     gdt::init(0);
     idt::init_idt(0);
     x2apic::init_bsp(CPU_FREQUENCY).expect("Failed to configure x2APIC");
+
+    #[cfg(test)]
+    test_main();
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         serial_println!("Found frame buffer");
@@ -276,7 +278,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     serial_println!("Kernel panic: {}", info);
-    idle_loop();
+    taos::idle_loop();
 }
 
 #[cfg(test)]
