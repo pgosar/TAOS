@@ -1,0 +1,30 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt, clippy
+        toolchain: nightly-x86_64-unknown-linux-gnu
+    - name: Add rust-src to toolchain
+      run:  rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "kernel -> target"
+    - name: lint
+      run: make check
+    - name: Build (check for errors)
+      run: make build

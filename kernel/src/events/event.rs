@@ -1,4 +1,3 @@
-extern crate alloc;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
@@ -29,11 +28,8 @@ impl Event {
 impl ArcWake for Event {
     fn wake_by_ref(arc: &Arc<Self>) {
         let r: Result<(), Arc<Event>> = arc.rewake_queue.push(arc.clone());
-        match r {
-            Err(_) => {
-                panic!("Event queue full!")
-            }
-            Ok(_) => {}
+        if r.is_err() {
+            panic!("Event queue full!")
         }
     }
 }
