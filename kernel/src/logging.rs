@@ -7,6 +7,12 @@ pub struct Logger {
     inner: Mutex<()>,
 }
 
+impl Default for Logger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Logger {
     pub const fn new() -> Logger {
         Logger {

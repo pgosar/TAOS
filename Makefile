@@ -1,3 +1,7 @@
+.PHONY: check
+check:
+	@cd kernel && cargo clippy -- -D warnings
+
 .PHONY: run
 run:
 	@cd kernel && cargo run

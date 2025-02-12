@@ -11,6 +11,10 @@ use limine::request::HhdmRequest;
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 /// initializes vmem system. activates pml4 and sets up page tables
+///
+/// # Safety
+///
+/// TODO
 pub unsafe fn init() -> OffsetPageTable<'static> {
     let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
 

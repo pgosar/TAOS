@@ -24,6 +24,9 @@ pub struct BootIntoFrameAllocator {
 }
 
 impl BootIntoFrameAllocator {
+    /// # Safety
+    ///
+    /// TODO
     pub unsafe fn init() -> Self {
         let memory_map: &MemoryMapResponse = MEMORY_MAP_REQUEST
             .get_response()
