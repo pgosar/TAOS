@@ -21,6 +21,7 @@ rand = { version = "0.8.3", features = ["small_rng"], default-features = false }
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 crossbeam-queue = { version = "0.3.12", default-features = false, features = ["alloc"] }
 arrayvec = { version = "0.7.6", default-features = false }
+log = { version = "0.4.25", default-features = false }
 
 #[build-dependencies]
 #serde = { version = "1.0.217", features = ["derive"] }

@@ -1,29 +1,20 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use limine::{
-    request::{FramebufferRequest, SmpRequest},
+    request::SmpRequest,
     smp::{Cpu, RequestFlags},
     BaseRevision,
 };
 
 use crate::{
-    constants::x2apic::CPU_FREQUENCY,
+    debug, devices,
     events::{register_event_runner, run_loop},
-    interrupts::{gdt, idt, x2apic},
-    memory::{
-        boot_frame_allocator::BootIntoFrameAllocator,
-        frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
-        heap, paging,
-    },
-    serial_println,
+    interrupts::{self, idt},
+    logging, memory, trace,
 };
 
 #[used]
 #[link_section = ".requests"]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-#[used]
-#[link_section = ".requests"]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 #[used]
 #[link_section = ".requests"]
@@ -34,35 +25,49 @@ static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn init() -> u32 {
     assert!(BASE_REVISION.is_supported());
-    serial_println!("Booting BSP...");
+    interrupts::init(0);
+    memory::init(0);
+    devices::init(0);
+    // Should be kept after devices in case logging gets complicated
+    // Right now log writes to serial, but if it were to switch to VGA, this would be important
+    logging::init(0);
 
-    gdt::init(0);
-    idt::init_idt(0);
-    x2apic::init_bsp(CPU_FREQUENCY).expect("Failed to configure x2APIC");
+    debug!("Waking cores");
+    let bsp_id = wake_cores();
 
-    unsafe {
-        *FRAME_ALLOCATOR.lock() = Some(GlobalFrameAllocator::Boot(BootIntoFrameAllocator::init()));
+    register_event_runner(bsp_id);
+    idt::enable();
+
+    bsp_id
+}
+
+#[no_mangle]
+unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
+    CPU_COUNT.fetch_add(1, Ordering::SeqCst);
+    interrupts::init(cpu.id);
+    memory::init(cpu.id);
+    devices::init(cpu.id);
+    logging::init(cpu.id);
+
+    debug!("AP {} initialized", cpu.id);
+
+    while !BOOT_COMPLETE.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
     }
-    let mut mapper = unsafe { paging::init() };
-    heap::init_heap(&mut mapper).expect("Failed to initialize heap");
 
-    if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
-        serial_println!("Found frame buffer");
-        if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for i in 0..100_u64 {
-                let pixel_offset = i * framebuffer.pitch() + i * 4;
-                unsafe {
-                    *(framebuffer.addr().add(pixel_offset as usize) as *mut u32) = 0xFFFFFFFF;
-                }
-            }
-        }
-    }
+    idt::enable();
 
+    register_event_runner(cpu.id);
+    debug!("AP {} entering event loop", cpu.id);
+    run_loop(cpu.id)
+}
+
+fn wake_cores() -> u32 {
     let smp_response = SMP_REQUEST.get_response().expect("SMP request failed");
     let cpu_count = smp_response.cpus().len() as u64;
     let bsp_id = smp_response.bsp_lapic_id();
 
-    serial_println!("Detected {} CPU cores", cpu_count);
+    trace!("Detected {} CPU cores", cpu_count);
 
     for cpu in smp_response.cpus() {
         if cpu.id != bsp_id {
@@ -75,30 +80,7 @@ pub fn init() -> u32 {
     }
 
     BOOT_COMPLETE.store(true, Ordering::SeqCst);
-    serial_println!("All CPUs initialized");
 
-    register_event_runner(bsp_id);
-    idt::enable();
-
+    debug!("All CPUs initialized");
     bsp_id
-}
-
-#[no_mangle]
-unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
-    CPU_COUNT.fetch_add(1, Ordering::SeqCst);
-    gdt::init(cpu.id);
-    idt::init_idt(cpu.id);
-    x2apic::init_ap().expect("Failed to initialize core APIC");
-
-    serial_println!("AP {} initialized", cpu.id);
-
-    while !BOOT_COMPLETE.load(Ordering::SeqCst) {
-        core::hint::spin_loop();
-    }
-
-    idt::enable();
-
-    register_event_runner(cpu.id);
-    serial_println!("AP {} entering event loop", cpu.id);
-    run_loop(cpu.id)
 }

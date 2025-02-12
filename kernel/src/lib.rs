@@ -16,6 +16,7 @@ pub mod events;
 pub mod filesys;
 pub mod init;
 pub mod interrupts;
+pub mod logging;
 pub mod memory;
 
 pub use devices::serial;
