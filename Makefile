@@ -6,6 +6,10 @@ check:
 	echo "Checking formatting" && \
 	cargo fmt --check
 
+.PHONY: build
+build:
+	@cd kernel && cargo build --features "strict"
+
 .PHONY: run
 run:
 	@cd kernel && cargo run
