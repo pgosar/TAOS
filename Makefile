@@ -1,6 +1,10 @@
 .PHONY: check
 check:
-	@cd kernel && cargo clippy -- -D warnings
+	@cd kernel && \
+	echo "Checking clippy" && \
+	cargo clippy -- -D warnings && \
+	echo "Checking formatting" && \
+	cargo fmt --check
 
 .PHONY: run
 run:
