@@ -24,6 +24,9 @@ jobs:
         toolchain: nightly-x86_64-unknown-linux-gnu
     - name: Add rust-src to toolchain
       run:  rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "kernel -> target"
     - name: lint
       run: make check
     - name: Build (check for errors)
