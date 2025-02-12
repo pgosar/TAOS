@@ -1,5 +1,9 @@
 use x86_64::{
-    structures::paging::{OffsetPageTable, Page, PhysFrame},
+    structures::paging::{
+        mapper::{MappedFrame, TranslateResult},
+        Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
+        Translate,
+    },
     PhysAddr, VirtAddr,
 };
 
@@ -9,7 +13,7 @@ use crate::{
     filesys::{BlockDevice, FsError},
     memory::paging,
 };
-use bitflags::bitflags;
+use bitflags::{bitflags, Flag};
 
 use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
 
@@ -167,7 +171,6 @@ impl BlockDevice for SDCardInfo {
     }
 
     fn write_block(&mut self, block_num: u64, buf: &[u8]) -> Result<(), FsError> {
-        debug_println!("Write block called, for blaock num {block_num}");
         if block_num > self.total_blocks {
             return Result::Err(FsError::IOError);
         }
@@ -218,9 +221,11 @@ pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
 /// Sets up an sd card, returning an SDCardInfo that can be used for further
 /// accesses to the sd card
 /// THIS ASSUMES A VERSION 2 SDCARD as of writing
-pub fn initalize_sd_card(
+/// THIS FUNCTION IS NOT THREAD SAFE (Ie dont try to initalize the same thread twice)
+pub unsafe fn initalize_sd_card(
     sd_card: &DeviceInfo,
     mapper: &mut OffsetPageTable,
+    offset: u64,
 ) -> Result<SDCardInfo, SDCardError> {
     // Assume sd_card is a device info for an SD Crd
     // Lets assume 1 slot, and it uses BAR 1
@@ -234,10 +239,64 @@ pub fn initalize_sd_card(
     // Determine the Base Address, and setup a mapping
     let base_address_register = unsafe { read_config(sd_card.bus, sd_card.device, 0, 0x10) };
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
-    let bar_frame = PhysFrame::from_start_address(PhysAddr::new(bar_address)).unwrap();
-    let page = Page::containing_address(VirtAddr::new(bar_address));
+    let bar_frame: PhysFrame<Size4KiB> =
+        PhysFrame::from_start_address(PhysAddr::new(bar_address)).unwrap();
 
-    paging::create_uncachable_mapping(page, bar_frame, mapper);
+    let offset_bar = bar_address + offset;
+    let translate_result = mapper.translate(VirtAddr::new(offset_bar));
+    match translate_result {
+        TranslateResult::Mapped {
+            frame,
+            offset: _,
+            flags,
+        } => match frame {
+            MappedFrame::Size4KiB(_) => {
+                let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(offset_bar));
+                unsafe {
+                    mapper
+                        .update_flags(
+                            page,
+                            flags | PageTableFlags::NO_CACHE | PageTableFlags::WRITABLE,
+                        )
+                        .map_err(|_| SDCardError::GenericSDError)?
+                        .flush();
+                }
+            }
+            MappedFrame::Size2MiB(_) => {
+                let page: Page<Size2MiB> = Page::containing_address(VirtAddr::new(offset_bar));
+                unsafe {
+                    mapper
+                        .update_flags(
+                            page,
+                            flags | PageTableFlags::NO_CACHE | PageTableFlags::WRITABLE,
+                        )
+                        .map_err(|_| SDCardError::GenericSDError)?
+                        .flush();
+                }
+            }
+            MappedFrame::Size1GiB(_) => {
+                let page: Page<Size1GiB> = Page::containing_address(VirtAddr::new(offset_bar));
+                unsafe {
+                    mapper
+                        .update_flags(
+                            page,
+                            flags | PageTableFlags::NO_CACHE | PageTableFlags::WRITABLE,
+                        )
+                        .map_err(|_| SDCardError::GenericSDError)?
+                        .flush();
+                }
+            }
+        },
+        TranslateResult::InvalidFrameAddress(_) => {
+            panic!("Invalid physical address in SD BAR")
+        }
+        TranslateResult::NotMapped => {
+            let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(offset_bar));
+            let bar_frame: PhysFrame<Size4KiB> =
+                PhysFrame::containing_address(PhysAddr::new(bar_address));
+            paging::create_uncachable_mapping(page, bar_frame, mapper);
+        }
+    }
     // Re-enable memory space commands
     unsafe {
         write_pci_command(
@@ -247,12 +306,11 @@ pub fn initalize_sd_card(
             sd_card.command | COMMAND_MEMORY_SPACE | COMMAND_BUS_MASTER,
         );
     }
-
     // Store capabilities in capabilties register
-    let capablities = unsafe { core::ptr::read_volatile((bar_address + 0x40) as *const u64) };
+    let capablities = unsafe { core::ptr::read_volatile((offset_bar + 0x40) as *const u64) };
 
     // Store Version of host
-    let version_address = (bar_address + 0xFE) as *const u16;
+    let version_address = (offset_bar + 0xFE) as *const u16;
     let mut version_data = unsafe { core::ptr::read_volatile(version_address) };
     version_data &= 0xFF;
 
@@ -260,7 +318,7 @@ pub fn initalize_sd_card(
     let info = SDCardInfoInternal {
         device_info: sd_card.clone(),
         capabilities: capablities,
-        base_address_register: bar_address,
+        base_address_register: offset_bar,
         version: version_data
             .try_into()
             .expect("Should have masked out upper byte"),

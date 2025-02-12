@@ -88,7 +88,7 @@ extern "x86-interrupt" fn page_fault_handler(
         stack_frame
     );
 
-    //panic!("PAGE FAULT!");
+    panic!("PAGE FAULT!");
 }
 
 extern "x86-interrupt" fn timer_handler(_: InterruptStackFrame) {

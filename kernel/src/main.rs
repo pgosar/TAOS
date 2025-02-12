@@ -148,21 +148,13 @@ extern "C" fn kmain() -> ! {
     let mut mapper = unsafe { paging::init(hhdm_offset) };
 
     heap::init_heap(&mut mapper).expect("heap initialization failed");
-
     let devices = walk_pci_bus();
     let sd_card_struct: Option<SDCardInfo> = match find_sd_card(&devices) {
         None => Option::None,
-        Some(sd_card) => initalize_sd_card(sd_card, &mut mapper).ok(),
+        Some(sd_card) => unsafe {
+            initalize_sd_card(sd_card, &mut mapper, hhdm_response.offset()).ok()
+        },
     };
-    // let data_to_write: [u8; 512] = [255; 512];
-    // if let Option::Some(sd_card) = sd_card_struct {
-    //     write_sd_card(&sd_card, 1, data_to_write).unwrap();
-    //     let data = read_sd_card(&sd_card, 1);
-    //     match data {
-    //         Err(_) => serial_println!("Failed to read data"),
-    //         Ok(data_actual) => serial_println!("Read data as {data_actual:?}"),
-    //     }
-    // }
 
     // let device = Box::new(MemoryBlockDevice::new(512, 512));
     let device = Box::new(sd_card_struct.unwrap());
