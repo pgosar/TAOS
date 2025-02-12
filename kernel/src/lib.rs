@@ -12,11 +12,11 @@ use x86_64::instructions::hlt;
 
 pub mod constants;
 pub mod devices;
+pub mod events;
 pub mod filesys;
+pub mod init;
 pub mod interrupts;
 pub mod memory;
-
-pub mod events;
 
 pub use devices::serial;
 
@@ -100,9 +100,9 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     serial_println!("!!! RUNNING LIBRARY TESTS !!!");
-
+    init::init();
     test_main();
-    loop {}
+    idle_loop();
 }
 
 #[cfg(test)]
