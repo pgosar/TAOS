@@ -325,7 +325,6 @@ pub fn initalize_sd_card(
 
 /// Sends a software reset to the sd card using the reset register
 fn software_reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
-    debug_println!("Resetting");
     let reset_addr = (sd_card.base_address_register + 0x2f) as *mut u8;
     unsafe { core::ptr::write_volatile(reset_addr, 1) };
 
@@ -513,33 +512,18 @@ fn get_full_sd_card_info(
         .try_into()
         .expect("Higher bits to be masked out");
     assert!(
-        csd_structre == 0,
-        "No support for SDHC or SDXC cards as of this moment"
+        csd_structre == 1,
+        "Only SDHC and SDXC cards are supported as of this moment"
     );
-    let c_size: u32 = ((csd >> 62) & 0xFFF)
+    let c_size: u32 = ((csd >> 48) & 0xFFFFFF)
         .try_into()
         .expect("Higher bits should be masked out");
-    // let max_block_len: u32 = (csd >> 22 & 0xF)
-    //     .try_into()
-    //     .expect("Higher bits to be masked out");
-    let c_size_mult: u32 = ((csd >> 47) & 0b111)
-        .try_into()
-        .expect("Higher bits to be masked out");
-
-    let mult = 1 << (c_size_mult + 2);
-    let block_number = (c_size + 1) * mult;
-    // let block_length = 1 << max_block_len;
-    let block_length = SD_BLOCK_SIZE;
-    let conversion_to_512_byte_blocks = block_length / SD_BLOCK_SIZE;
-    let actual_block_number = block_number * conversion_to_512_byte_blocks;
-    // TODO deternube wgy block length is wrong
-    debug_println!("mult = {mult}, block_no = {block_number}, conversion = {conversion_to_512_byte_blocks} block_length = {block_length}");
 
     let info = SDCardInfo {
         internal_info: sd_card.clone(),
         reletave_card_address: rca,
         block_size: SD_BLOCK_SIZE.try_into().expect("To be on 64 bit system"),
-        total_blocks: actual_block_number.into(),
+        total_blocks: (c_size + 1).into(),
     };
 
     Result::Ok(info)
