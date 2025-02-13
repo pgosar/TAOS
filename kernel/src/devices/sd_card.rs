@@ -673,6 +673,7 @@ fn determine_sd_card_response(
             let response_32_bits: u128 =
                 unsafe { core::ptr::read_volatile(response_register).into() };
             response |= response_32_bits << 96;
+            response <<= 8;
             SDCommandResponse::Response128Bits(response)
         }
         _ => SDCommandResponse::NoResponse,
@@ -728,7 +729,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCar
         *item = unsafe { core::ptr::read_volatile(buffer_data_port_reg_addr) };
     }
 
-    let new_data = unsafe { core::mem::transmute::<[u32;128], [u8;512]>(data) };
+    let new_data = unsafe { core::mem::transmute::<[u32; 128], [u8; 512]>(data) };
     Result::Ok(new_data)
 }
 

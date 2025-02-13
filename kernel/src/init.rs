@@ -26,7 +26,8 @@ static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 pub fn init() -> u32 {
     assert!(BASE_REVISION.is_supported());
     interrupts::init(0);
-    let mut kernel_tables = memory::init(0).expect("Memory init returns init page tables when cpu_id = 0");
+    let mut kernel_tables =
+        memory::init(0).expect("Memory init returns init page tables when cpu_id = 0");
     devices::init(0, &mut kernel_tables);
     // Should be kept after devices in case logging gets complicated
     // Right now log writes to serial, but if it were to switch to VGA, this would be important

@@ -8,7 +8,7 @@ use boot_frame_allocator::BootIntoFrameAllocator;
 use frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR};
 use x86_64::structures::paging::OffsetPageTable;
 
-pub fn init(cpu_id: u32)  -> Option<OffsetPageTable<'static>> {
+pub fn init(cpu_id: u32) -> Option<OffsetPageTable<'static>> {
     if cpu_id == 0 {
         unsafe {
             *FRAME_ALLOCATOR.lock() =
@@ -16,7 +16,7 @@ pub fn init(cpu_id: u32)  -> Option<OffsetPageTable<'static>> {
         }
         let mut mapper = unsafe { paging::init() };
         heap::init_heap(&mut mapper).expect("Failed to initialize heap");
-        return Option::Some(mapper)
+        return Option::Some(mapper);
     }
     Option::None
 }

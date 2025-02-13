@@ -26,7 +26,8 @@ pub fn init(cpu_id: u32, mapper: &mut OffsetPageTable) {
             }
         }
         let devices = walk_pci_bus();
-        let sd_card_device = find_sd_card(&devices).expect("Build system currently sets up an sd-card");
+        let sd_card_device =
+            find_sd_card(&devices).expect("Build system currently sets up an sd-card");
         let _sd_card = initalize_sd_card(&sd_card_device, mapper);
     }
 }
