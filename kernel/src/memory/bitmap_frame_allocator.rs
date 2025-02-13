@@ -33,11 +33,6 @@ impl BitmapFrameAllocator {
         for entry in memory_map.entries().iter() {
             if entry.entry_type == EntryType::USABLE {
                 let end_addr = entry.base + entry.length;
-                debug_println!(
-                    "Start addr = 0x{:X}, end_addr = 0x{:X}",
-                    entry.base,
-                    end_addr
-                );
                 if end_addr as usize > true_end {
                     true_end = end_addr as usize;
                 }
