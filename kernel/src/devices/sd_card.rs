@@ -1,3 +1,5 @@
+use alloc::{sync::Arc, vec::Vec};
+use spin::Mutex;
 use x86_64::{
     structures::paging::{
         mapper::{MappedFrame, TranslateResult},
@@ -15,18 +17,17 @@ use crate::{
 };
 use bitflags::bitflags;
 
-use super::pci::{read_config, AllDeviceInfo, DeviceInfo};
+use super::pci::{read_config, DeviceInfo};
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct SDCardInfoInternal {
-    device_info: DeviceInfo,
     capabilities: u64,
     base_address_register: u64,
     version: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct SDCardInfo {
     internal_info: SDCardInfoInternal,
@@ -200,19 +201,16 @@ impl BlockDevice for SDCardInfo {
 /// this was not found. Most functions take in SDCard Info struct, which
 /// can be recieved by using initalize_sd_card with the SD card that
 /// was found using this function.
-pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
-    for possible_device in &devices.device_info {
-        match possible_device {
-            None => (),
-            Some(device) => {
-                if device.class_code == SD_CLASS_CODE
-                    && device.subclass == SD_SUB_CLASS
-                    && (device.programming_interface == SD_DMA_INTERFACE
-                        || device.programming_interface == SD_NO_DMA_INTERFACE)
-                {
-                    return Option::Some(device);
-                }
-            }
+pub fn find_sd_card(devices: &Vec<Arc<Mutex<DeviceInfo>>>) -> Option<Arc<Mutex<DeviceInfo>>> {
+    for possible_device in devices {
+        let arc_device = possible_device.clone();
+        let device = arc_device.lock();
+        if device.class_code == SD_CLASS_CODE
+            && device.subclass == SD_SUB_CLASS
+            && (device.programming_interface == SD_DMA_INTERFACE
+                || device.programming_interface == SD_NO_DMA_INTERFACE)
+        {
+            return Option::Some(possible_device.clone());
         }
     }
     return Option::None;
@@ -221,16 +219,16 @@ pub fn find_sd_card(devices: &AllDeviceInfo) -> Option<&DeviceInfo> {
 /// Sets up an sd card, returning an SDCardInfo that can be used for further
 /// accesses to the sd card
 /// THIS ASSUMES A VERSION 2 SDCARD as of writing
-/// THIS FUNCTION IS NOT THREAD SAFE (Ie dont try to initalize the same thread twice)
-pub unsafe fn initalize_sd_card(
-    sd_card: &DeviceInfo,
+pub fn initalize_sd_card(
+    sd_arc: &Arc<Mutex<DeviceInfo>>,
     mapper: &mut OffsetPageTable,
-    offset: u64,
-) -> Result<SDCardInfo, SDCardError> {
+) -> Result<Mutex<SDCardInfo>, SDCardError> {
     // Assume sd_card is a device info for an SD Crd
     // Lets assume 1 slot, and it uses BAR 1
 
     // Disable Commands from being sent over the Memory Space
+    let sd_lock = sd_arc.clone();
+    let sd_card = sd_lock.lock();
     let command = sd_card.command & !(COMMAND_MEMORY_SPACE);
     unsafe {
         write_pci_command(sd_card.bus, sd_card.device, 0, command);
@@ -239,7 +237,7 @@ pub unsafe fn initalize_sd_card(
     // Determine the Base Address, and setup a mapping
     let base_address_register = unsafe { read_config(sd_card.bus, sd_card.device, 0, 0x10) };
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
-
+    let offset = mapper.phys_offset().as_u64();
     let offset_bar = bar_address + offset;
     let translate_result = mapper.translate(VirtAddr::new(offset_bar));
     match translate_result {
@@ -314,7 +312,6 @@ pub unsafe fn initalize_sd_card(
 
     // Construct the stuct that we will use for further communication
     let info = SDCardInfoInternal {
-        device_info: sd_card.clone(),
         capabilities: capablities,
         base_address_register: offset_bar,
         version: version_data
@@ -323,7 +320,7 @@ pub unsafe fn initalize_sd_card(
     };
 
     let new_info = reset_sd_card(&info)?;
-    return Result::Ok(new_info);
+    return Result::Ok(Mutex::new(new_info));
 }
 
 /// Sends a software reset to the sd card using the reset register

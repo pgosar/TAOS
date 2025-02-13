@@ -1,6 +1,6 @@
 use crate::{
     constants::memory::{BITMAP_ENTRY_SIZE, FRAME_SIZE, FULL_BITMAP_ENTRY},
-    debug_println, serial_println,
+    serial_println,
 };
 use limine::memory_map::EntryType;
 use limine::response::MemoryMapResponse;

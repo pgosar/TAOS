@@ -1,10 +1,11 @@
+use alloc::{sync::Arc, vec::Vec};
+use spin::Mutex;
 use x86_64::instructions::port::{
     self, PortGeneric, ReadOnlyAccess, ReadWriteAccess, WriteOnlyAccess,
 };
 
 use crate::debug_println;
 
-const MAX_PCI_DEVICES: usize = 16;
 const CONFIG_ADDRESS_BUS: u16 = 0xCF8;
 const CONFIG_DATA_BUS: u16 = 0xCFC;
 pub const COMMAND_INTERRUPT_DISABLE: u16 = 0x1 << 10;
@@ -12,7 +13,7 @@ pub const COMMAND_BUS_MASTER: u16 = 0x1 << 2;
 pub const COMMAND_MEMORY_SPACE: u16 = 0x1 << 1;
 pub const COMMAND_IO_SPACE: u16 = 0x1;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct DeviceInfo {
     pub bus: u8,
     pub device: u8,
@@ -28,11 +29,6 @@ pub struct DeviceInfo {
     pub header_type: u8,
     pub latency_timer: u8,
     pub cache_line_size: u8,
-}
-
-pub struct AllDeviceInfo {
-    pub devices_connected: usize,
-    pub device_info: [Option<DeviceInfo>; MAX_PCI_DEVICES],
 }
 
 fn get_pci_addres(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
@@ -173,27 +169,21 @@ pub fn print_pci_info(device: &DeviceInfo) {
     });
 }
 
-pub fn walk_pci_bus() -> AllDeviceInfo {
-    let mut connected_devices = 0;
+pub fn walk_pci_bus() -> Vec<Arc<Mutex<DeviceInfo>>> {
     let mut bus: u16 = 0;
-    let mut devices: [Option<DeviceInfo>; MAX_PCI_DEVICES] =
-        [const { Option::None }; MAX_PCI_DEVICES];
+    let mut devices = Vec::new();
     while bus < 256 {
         let mut device: u8 = 0;
         while device < 32 {
             match device_connected(bus.try_into().expect("Masked out bits"), device) {
                 None => (),
                 Some(device_info) => {
-                    devices[connected_devices] = Some(device_info);
-                    connected_devices += 1;
+                    devices.push(Arc::new(Mutex::new(device_info)));
                 }
             }
             device += 1
         }
         bus += 1
     }
-    return AllDeviceInfo {
-        devices_connected: connected_devices,
-        device_info: devices,
-    };
+    return devices;
 }
