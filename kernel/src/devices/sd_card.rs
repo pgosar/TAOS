@@ -192,8 +192,7 @@ impl BlockDevice for SDCardInfo {
     }
 
     fn total_blocks(&self) -> u64 {
-        1024
-        // return self.total_blocks;
+        return self.total_blocks;
     }
 }
 
