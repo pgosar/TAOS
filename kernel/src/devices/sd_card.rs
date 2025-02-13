@@ -19,15 +19,15 @@ use bitflags::bitflags;
 
 use super::pci::{read_config, DeviceInfo};
 
+pub static SD_CARD: Mutex<Option<SDCardInfo>> = Mutex::new(Option::None);
+
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct SDCardInfoInternal {
     capabilities: u64,
     base_address_register: u64,
-    version: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct SDCardInfo {
     internal_info: SDCardInfoInternal,
@@ -222,7 +222,7 @@ pub fn find_sd_card(devices: &Vec<Arc<Mutex<DeviceInfo>>>) -> Option<Arc<Mutex<D
 pub fn initalize_sd_card(
     sd_arc: &Arc<Mutex<DeviceInfo>>,
     mapper: &mut OffsetPageTable,
-) -> Result<Mutex<SDCardInfo>, SDCardError> {
+) -> Result<(), SDCardError> {
     // Assume sd_card is a device info for an SD Crd
     // Lets assume 1 slot, and it uses BAR 1
 
@@ -305,22 +305,15 @@ pub fn initalize_sd_card(
     // Store capabilities in capabilties register
     let capablities = unsafe { core::ptr::read_volatile((offset_bar + 0x40) as *const u64) };
 
-    // Store Version of host
-    let version_address = (offset_bar + 0xFE) as *const u16;
-    let mut version_data = unsafe { core::ptr::read_volatile(version_address) };
-    version_data &= 0xFF;
-
     // Construct the stuct that we will use for further communication
     let info = SDCardInfoInternal {
         capabilities: capablities,
         base_address_register: offset_bar,
-        version: version_data
-            .try_into()
-            .expect("Should have masked out upper byte"),
     };
 
     let new_info = reset_sd_card(&info)?;
-    Result::Ok(Mutex::new(new_info))
+    *SD_CARD.lock() = Option::Some(new_info);
+    Result::Ok(())
 }
 
 /// Sends a software reset to the sd card using the reset register
