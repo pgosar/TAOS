@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 use core::future::Future;
-use core::usize;
 
 use spin::Mutex;
 

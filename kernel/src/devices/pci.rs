@@ -41,16 +41,21 @@ fn get_pci_addres(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let function_extended: u32 = function.into();
     let offset_extended: u32 = offset.into();
 
-    return 1 << 31
-        | bus_extended << 16
-        | device_extended << 11
-        | function_extended << 8
-        | offset_extended;
+    (1 << 31)
+        | (bus_extended << 16)
+        | (device_extended << 11)
+        | (function_extended << 8)
+        | offset_extended
 }
 
 /// Reads from pci config and returns the result into a u32. Note: device must be
 /// less than 32, function must be less than 8, and offset must be a multiple
 /// of 4.
+/// 
+/// # Safety 
+/// 
+/// This function is unsafe because it directly accesses the pci bus without 
+/// synch
 pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let address = get_pci_addres(bus, device, function, offset);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
@@ -60,9 +65,15 @@ pub unsafe fn read_config(bus: u8, device: u8, function: u8, offset: u8) -> u32 
     let mut config_port: PortGeneric<u32, ReadOnlyAccess> = port::PortGeneric::new(CONFIG_DATA_BUS);
     let data = config_port.read();
     address_port.write(0);
-    return data;
+    data
 }
 
+/// Writes data to the pci bus
+/// 
+/// # Safety
+/// 
+/// This function is unsafe because it directly accesses the pci bus without 
+/// synch
 pub unsafe fn write_pci_data(bus: u8, device: u8, function: u8, offset: u8, data: u32) {
     let address = get_pci_addres(bus, device, function, offset);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
@@ -79,6 +90,11 @@ pub unsafe fn write_pci_data(bus: u8, device: u8, function: u8, offset: u8, data
 /// Writes the given command into the command register. It is recommended
 /// to get the old value of command and set and unset the appropate bits
 /// from the command, as some bits are read only
+/// 
+/// # Safety
+/// 
+/// This function is unsafe because it directly accesses the pci bus without 
+/// synch
 pub unsafe fn write_pci_command(bus: u8, device: u8, function: u8, command: u16) {
     let address = get_pci_addres(bus, device, function, 0x4);
     let mut address_port: PortGeneric<u32, WriteOnlyAccess> =
@@ -137,22 +153,22 @@ fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
         .expect("Masked out bits");
 
     let device_info = DeviceInfo {
-        bus: bus,
-        device: device,
-        device_id: device_id,
-        vendor_id: vendor_id,
-        status: status,
-        command: command,
-        class_code: class_code,
-        subclass: subclass,
-        programming_interface: programming_interface,
-        revision_id: revision_id,
-        built_in_self_test: built_in_self_test,
-        header_type: header_type,
-        latency_timer: latency_timer,
-        cache_line_size: cache_line_size,
+        bus,
+        device,
+        device_id,
+        vendor_id,
+        status,
+        command,
+        class_code,
+        subclass,
+        programming_interface,
+        revision_id,
+        built_in_self_test,
+        header_type,
+        latency_timer,
+         cache_line_size,
     };
-    return Option::Some(device_info);
+    Option::Some(device_info)
 }
 
 pub fn print_pci_info(device: &DeviceInfo) {
@@ -185,5 +201,5 @@ pub fn walk_pci_bus() -> Vec<Arc<Mutex<DeviceInfo>>> {
         }
         bus += 1
     }
-    return devices;
+    devices
 }

@@ -160,7 +160,7 @@ impl BlockDevice for SDCardInfo {
             return Result::Err(FsError::IOError);
         }
         let data = read_sd_card(
-            &self,
+            self,
             block_num
                 .try_into()
                 .expect("Maxumum block number should not be greater than 32 bits"),
@@ -168,7 +168,7 @@ impl BlockDevice for SDCardInfo {
         .map_err(|_| FsError::IOError)?;
         buf.copy_from_slice(&data);
 
-        return Result::Ok(());
+        Result::Ok(())
     }
 
     fn write_block(&mut self, block_num: u64, buf: &[u8]) -> Result<(), FsError> {
@@ -178,22 +178,22 @@ impl BlockDevice for SDCardInfo {
         let mut data: [u8; 512] = [0; 512];
         data.copy_from_slice(buf);
         write_sd_card(
-            &self,
+            self,
             block_num
                 .try_into()
                 .expect("Maximum block number should not be greater than 32 bits"),
             data,
         )
         .map_err(|_| FsError::IOError)?;
-        return Result::Ok(());
+        Result::Ok(())
     }
     fn block_size(&self) -> usize {
-        return SD_BLOCK_SIZE.try_into().expect("To be on 64 bit system");
+        SD_BLOCK_SIZE.try_into().expect("To be on 64 bit system")
     }
 
     fn total_blocks(&self) -> u64 {
-        return 1024;
-        return self.total_blocks;
+        1024
+        // return self.total_blocks;
     }
 }
 
@@ -213,7 +213,7 @@ pub fn find_sd_card(devices: &Vec<Arc<Mutex<DeviceInfo>>>) -> Option<Arc<Mutex<D
             return Option::Some(possible_device.clone());
         }
     }
-    return Option::None;
+    Option::None
 }
 
 /// Sets up an sd card, returning an SDCardInfo that can be used for further
@@ -320,7 +320,7 @@ pub fn initalize_sd_card(
     };
 
     let new_info = reset_sd_card(&info)?;
-    return Result::Ok(Mutex::new(new_info));
+    Result::Ok(Mutex::new(new_info))
 }
 
 /// Sends a software reset to the sd card using the reset register
@@ -343,7 +343,7 @@ fn software_reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardErro
         debug_println!("Reset Failed");
         return Result::Err(SDCardError::SDTimeout);
     }
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn enable_sd_card_interrupts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
@@ -359,7 +359,7 @@ fn enable_sd_card_interrupts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardE
     let error_intr_enable_addr = (sd_card.base_address_register + 0x3A) as *mut u16;
     unsafe { core::ptr::write_volatile(error_intr_enable_addr, 0x0FB) };
     sending_command_valid(sd_card)?;
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
@@ -386,7 +386,7 @@ fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     unsafe { core::ptr::write_volatile(power_control_addr, power_control) };
     power_control |= 1;
     unsafe { core::ptr::write_volatile(power_control_addr, power_control) };
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn set_sd_clock(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
@@ -423,14 +423,14 @@ fn set_sd_clock(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     clock_ctrl_reg |= 0b11 << 1;
     unsafe { core::ptr::write_volatile(clock_ctrl_reg_addr, clock_ctrl_reg) };
 
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn enable_timeouts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let timeout_addr = (sd_card.base_address_register + 0x2e) as *mut u8;
     unsafe { core::ptr::write_volatile(timeout_addr, 0b1110) };
     sending_command_valid(sd_card)?;
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn send_sd_reset_commands(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SDCardError> {
@@ -500,8 +500,7 @@ fn send_sd_reset_commands(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SD
         panic!("CMD 3 should return a 32 bit response");
     }
 
-    // cmd 9
-    return result;
+    result
 }
 
 fn get_full_sd_card_info(
@@ -517,13 +516,13 @@ fn get_full_sd_card_info(
         csd_structre == 0,
         "No support for SDHC or SDXC cards as of this moment"
     );
-    let c_size: u32 = (csd >> 62 & 0xFFF)
+    let c_size: u32 = ((csd >> 62) & 0xFFF)
         .try_into()
         .expect("Higher bits should be masked out");
     // let max_block_len: u32 = (csd >> 22 & 0xF)
     //     .try_into()
     //     .expect("Higher bits to be masked out");
-    let c_size_mult: u32 = (csd >> 47 & 0b111)
+    let c_size_mult: u32 = ((csd >> 47) & 0b111)
         .try_into()
         .expect("Higher bits to be masked out");
 
@@ -543,20 +542,20 @@ fn get_full_sd_card_info(
         total_blocks: actual_block_number.into(),
     };
 
-    return Result::Ok(info);
+    Result::Ok(info)
 }
 
 fn reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SDCardError> {
-    software_reset_sd_card(&sd_card)?;
-    enable_sd_card_interrupts(&sd_card)?;
-    power_on_sd_card(&sd_card)?;
-    set_sd_clock(&sd_card)?;
+    software_reset_sd_card(sd_card)?;
+    enable_sd_card_interrupts(sd_card)?;
+    power_on_sd_card(sd_card)?;
+    set_sd_clock(sd_card)?;
     // Is this needed, should this be here if so
-    enable_timeouts(&sd_card)?;
+    enable_timeouts(sd_card)?;
 
-    let info = send_sd_reset_commands(&sd_card)?;
+    let info = send_sd_reset_commands(sd_card)?;
 
-    return Result::Ok(info);
+    Result::Ok(info)
 }
 
 // Determines if sending a command is currently valid
@@ -572,7 +571,7 @@ fn sending_command_valid(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError
         debug_println!("Present state = 0x{present_state:X}");
         return Result::Err(SDCardError::CommandStoppedDueToError);
     }
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 fn check_no_errors(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
@@ -584,7 +583,7 @@ fn check_no_errors(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
         return Result::Err(SDCardError::GenericSDError);
     }
 
-    return Result::Ok(());
+    Result::Ok(())
 }
 
 /// Bugs: Does not currently work with cmd 12 or 23 (gets response in wrong place)
@@ -596,7 +595,7 @@ fn send_sd_command(
     flags: CommandFlags,
 ) -> Result<SDCommandResponse, SDCardError> {
     assert!(command_idx < 64);
-    let _ = sending_command_valid(sd_card)?;
+    sending_command_valid(sd_card)?;
 
     let command_register_addr = (sd_card.base_address_register + 0xE) as *mut u16;
     let mut command: u16 = command_idx.into();
@@ -630,14 +629,14 @@ fn send_sd_command(
             let command_done = core::ptr::read_volatile(interrupt_status_register);
             if (command_done & 1) == 1 {
                 core::ptr::write_volatile(interrupt_status_register, 1);
-                return Result::Ok(determine_sd_card_response(&sd_card, respone_type));
+                return Result::Ok(determine_sd_card_response(sd_card, respone_type));
             } else if command_done != 0 {
                 debug_println!("Something happened 0x{command_done:X}");
             }
         }
     }
     check_no_errors(sd_card)?;
-    return Result::Err(SDCardError::SDTimeout);
+    Result::Err(SDCardError::SDTimeout)
 }
 
 fn determine_sd_card_response(
@@ -654,7 +653,7 @@ fn determine_sd_card_response(
         | SDResponseTypes::R6 => {
             let response_register = (sd_card.base_address_register + 0x10) as *const u32;
             let response = unsafe { core::ptr::read_volatile(response_register) };
-            return SDCommandResponse::Response32Bits(response);
+            SDCommandResponse::Response32Bits(response)
         }
         SDResponseTypes::R2 => {
             let mut response: u128 = 0;
@@ -674,9 +673,9 @@ fn determine_sd_card_response(
             let response_32_bits: u128 =
                 unsafe { core::ptr::read_volatile(response_register).into() };
             response |= response_32_bits << 96;
-            return SDCommandResponse::Response128Bits(response);
+            SDCommandResponse::Response128Bits(response)
         }
-        _ => return SDCommandResponse::NoResponse,
+        _ => SDCommandResponse::NoResponse,
     }
 }
 
@@ -687,7 +686,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCar
     unsafe { core::ptr::write_volatile(block_size_register_addr, 0x200) };
     let block_count_register_addr = (internal_info.base_address_register + 0x6) as *mut u16;
     unsafe { core::ptr::write_volatile(block_count_register_addr, 1) };
-    sending_command_valid(&internal_info)?;
+    sending_command_valid(internal_info)?;
     let argument_register_addr = (internal_info.base_address_register + 0x8) as *mut u32;
     unsafe { core::ptr::write_volatile(argument_register_addr, block * SD_BLOCK_SIZE) };
     let transfer_mode_register_adder = (internal_info.base_address_register + 0xC) as *mut u16;
@@ -700,7 +699,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCar
 
     // Send command
     send_sd_command(
-        &internal_info,
+        internal_info,
         17,
         SDResponseTypes::R1,
         CommandFlags::DataPresentSelect,
@@ -725,12 +724,12 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCar
 
     let mut data = [0; 128];
     let buffer_data_port_reg_addr = (internal_info.base_address_register + 0x20) as *const u32;
-    for i in 0..128 {
-        data[i] = unsafe { core::ptr::read_volatile(buffer_data_port_reg_addr) };
+    for item in &mut data {
+        *item = unsafe { core::ptr::read_volatile(buffer_data_port_reg_addr) };
     }
 
-    let new_data = unsafe { core::mem::transmute(data) };
-    return Result::Ok(new_data);
+    let new_data = unsafe { core::mem::transmute::<[u32;128], [u8;512]>(data) };
+    Result::Ok(new_data)
 }
 
 pub fn write_sd_card(sd_card: &SDCardInfo, block: u32, data: [u8; 512]) -> Result<(), SDCardError> {
@@ -747,7 +746,7 @@ pub fn write_sd_card(sd_card: &SDCardInfo, block: u32, data: [u8; 512]) -> Resul
 
     // Send command
     send_sd_command(
-        &internal_info,
+        internal_info,
         24,
         SDResponseTypes::R1,
         CommandFlags::DataPresentSelect,
@@ -773,11 +772,11 @@ pub fn write_sd_card(sd_card: &SDCardInfo, block: u32, data: [u8; 512]) -> Resul
 
     let data_32_bits: [u32; 128] = unsafe { core::mem::transmute(data) };
     let buffer_data_port_reg_addr = (internal_info.base_address_register + 0x20) as *mut u32;
-    for i in 0..128 {
+    for item in data_32_bits {
         unsafe {
-            core::ptr::write_volatile(buffer_data_port_reg_addr, data_32_bits[i]);
+            core::ptr::write_volatile(buffer_data_port_reg_addr, item);
         }
     }
 
-    return Result::Ok(());
+    Result::Ok(())
 }
