@@ -1,3 +1,5 @@
+override STORAGE_NAME := storage
+
 .PHONY: check
 check:
 	@cd kernel && \
@@ -13,10 +15,6 @@ build:
 .PHONY: run
 run:
 	@cd kernel && cargo run
-
-.PHONY: debug-sd 
-debug-sd: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso blank_drive
-	$(QEMU) $(QEMU_UEFI) $(QEMU_BOOT_ISO) $(QEMU_DISPLAY_TERM) --trace "sd*"
 
 .PHONY: run-term
 run-term:
@@ -40,7 +38,7 @@ fmt:
 
 .PHONY: blank_drive
 blank_drive:
-	dd if=/dev/zero of=$(STORAGE_NAME).img bs=1M count=4k
+	@cd kernel && dd if=/dev/zero of=$(STORAGE_NAME).img bs=1M count=4k
 
 .PHONY: clean
 clean:
