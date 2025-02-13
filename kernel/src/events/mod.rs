@@ -100,6 +100,7 @@ pub fn current_running_event_priority(cpuid: u32) -> usize {
     }
 }
 
+#[derive(Debug)]
 pub struct EventInfo {
     pub priority: usize,
     pub pid: u32,

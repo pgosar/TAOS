@@ -3,7 +3,7 @@ use crate::{
         memory::PAGE_SIZE,
         processes::{STACK_SIZE, STACK_START},
     },
-    memory::paging::{create_mapping, remove_mapping, update_permissions},
+    memory::paging::{create_mapping, update_permissions},
     serial_println,
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};

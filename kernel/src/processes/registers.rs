@@ -20,66 +20,17 @@ macro_rules! push_registers {
                 "push r14",
                 "push r15",
                 "push rbp",
-                options()
+                options(preserves_flags)
             );
         }
     }};
 }
 
-
 #[macro_export]
 macro_rules! pop_registers {
-    ($regs:expr) => {{
+    () => {{
         unsafe {
             core::arch::asm!(
-                // Expected stack layout when popping:
-                //   [rsp + 0]    -> rbp
-                //   [rsp + 8]    -> r15
-                //   [rsp + 16]   -> r14
-                //   [rsp + 24]   -> r13
-                //   [rsp + 32]   -> r12
-                //   [rsp + 40]   -> r11
-                //   [rsp + 48]   -> r10
-                //   [rsp + 56]   -> r9
-                //   [rsp + 64]   -> r8
-                //   [rsp + 72]   -> rdi
-                //   [rsp + 80]   -> rsi
-                //   [rsp + 88]   -> rdx
-                //   [rsp + 96]   -> rcx
-                //   [rsp + 104]  -> rbx
-                //   [rsp + 112]  -> rax
-                "mov rax, [rsp + 112]",
-                "mov [{0}], rax",
-                "mov rbx, [rsp + 104]",
-                "mov [{0} + 8], rbx",
-                "mov rcx, [rsp + 96]",
-                "mov [{0} + 16], rcx",
-                "mov rdx, [rsp + 88]",
-                "mov [{0} + 24], rdx",
-                "mov rsi, [rsp + 80]",
-                "mov [{0} + 32], rsi",
-                "mov rdi, [rsp + 72]",
-                "mov [{0} + 40], rdi",
-                "mov r8, [rsp + 64]",
-                "mov [{0} + 48], r8",
-                "mov r9, [rsp + 56]",
-                "mov [{0} + 56], r9",
-                "mov r10, [rsp + 48]",
-                "mov [{0} + 64], r10",
-                "mov r11, [rsp + 40]",
-                "mov [{0} + 72], r11",
-                "mov r12, [rsp + 32]",
-                "mov [{0} + 80], r12",
-                "mov r13, [rsp + 24]",
-                "mov [{0} + 88], r13",
-                "mov r14, [rsp + 16]",
-                "mov [{0} + 96], r14",
-                "mov r15, [rsp + 8]",
-                "mov [{0} + 104], r15",
-                "mov rbp, [rsp]",
-                "mov [{0} + 112], rbp",
-
-                // Restore in reverse order from stack
                 "pop rbp",
                 "pop r15",
                 "pop r14",
@@ -95,22 +46,19 @@ macro_rules! pop_registers {
                 "pop rcx",
                 "pop rbx",
                 "pop rax",
-                in(reg) &mut $regs,
-                options()
+                options(nostack)
             );
         }
     }};
 }
 
-
 #[macro_export]
 macro_rules! load_registers {
-  ($regs:expr) => {
-
-  }
+    ($regs:expr) => {};
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct Registers {
     pub rax: u64,
     pub rbx: u64,

@@ -329,21 +329,20 @@ extern "C" fn kmain() -> ! {
     }
 
     // ASYNC
-    schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3, 0);
-    schedule(bsp_id, print_nums_after_rand_delay(0x532), 2, 0);
-    schedule(bsp_id, test_event_two_blocks(400), 0, 0);
-    schedule(bsp_id, test_event(100), 3, 0);
+    //schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3, 0);
+    //schedule(bsp_id, print_nums_after_rand_delay(0x532), 2, 0);
+    //schedule(bsp_id, test_event_two_blocks(400), 0, 0);
+    //schedule(bsp_id, test_event(100), 3, 0);
 
     // // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
-    schedule(1, test_event(353), 1, 0);
-
-    // serial_println!("BSP entering event loop");
+    //schedule(1, test_event(353), 1, 0);
 
     // This loads in the binary and creates a process
     let pid = create_process(BINARY, &mut mapper, hhdm_offset);
     print_process_table(&PROCESS_TABLE);
     unsafe { schedule(bsp_id, run_process_ring3(pid), 0, pid) };
 
+    serial_println!("BSP entering event loop");
     unsafe { run_loop(bsp_id) };
     // idle_loop();
 }
@@ -378,7 +377,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     // ASYNC
     register_event_runner(cpu.id);
 
-    schedule(cpu.id, test_event(200), 2, 0);
+    //schedule(cpu.id, test_event(200), 2, 0);
 
     serial_println!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)

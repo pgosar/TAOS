@@ -8,7 +8,7 @@ use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
 use crate::processes::process::{resume_process, PROCESS_TABLE};
 use crate::processes::registers::Registers;
-use crate::{prelude::*, push_registers, pop_registers};
+use crate::{pop_registers, prelude::*, push_registers};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -96,41 +96,85 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
-    // SAVE REGISTERS VALUES FIRST
     push_registers!();
-    let mut regs = Registers::new();
-    pop_registers!(regs);
-    regs.rax = stack_frame.stack_pointer.as_u64();
-    regs.rip = stack_frame.instruction_pointer.as_u64();
-    regs.rflags = stack_frame.cpu_flags.bits();
+    // ive verified that when we push the registers onto the stack at some point we end up rewriting data that belongs to the stack_frame, corrupting its value
+    // next steps are to a) figure out how to push to the stack (perhaps by moving rsp somewhere else) to avoid corrupting it
+    // b) examine what happens in the llvm IR when this x86-interrupt handler is called and see if there's anything that can help
 
-    // Get PID from Event from CPU ID
+    let regs = unsafe {
+        let rsp_after: usize;
+        unsafe {
+            core::arch::asm!(
+            "mov {}, rsp",
+            out(reg) rsp_after);
+
+            serial_println!("RSP AFTER {:#X}", rsp_after);
+        }
+
+        // RSP, RIP, and RFLAGS are saved by the interrupt stack frame
+        //num registers 15
+        let stack_ptr = rsp_after as *const u64;
+
+        let regs = Registers {
+            rax: *stack_ptr.add(14),
+            rbx: *stack_ptr.add(13),
+            rcx: *stack_ptr.add(12),
+            rdx: *stack_ptr.add(11),
+            rsi: *stack_ptr.add(10),
+            rdi: *stack_ptr.add(9),
+            r8: *stack_ptr.add(8),
+            r9: *stack_ptr.add(7),
+            r10: *stack_ptr.add(6),
+            r11: *stack_ptr.add(5),
+            r12: *stack_ptr.add(4),
+            r13: *stack_ptr.add(3),
+            r14: *stack_ptr.add(2),
+            r15: *stack_ptr.add(1),
+            rbp: *stack_ptr.add(0),
+            // saved from interrupt stack frame
+            rsp: 0,
+            rip: 0,
+            rflags: 0,
+        };
+        pop_registers!();
+        regs
+    };
+    serial_println!("STACK FRAME PTR {:?}", stack_frame);
+
+    let rip = stack_frame.instruction_pointer.as_u64();
+    let rsp = stack_frame.stack_pointer.as_u64();
+    let rflags = stack_frame.cpu_flags.bits();
+    serial_println!("RIP {:#X}", rip);
+    serial_println!("RSP {:#X}", rsp);
+    serial_println!("RFLAGS {:#X}", rflags);
+
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
+
+    if event.pid == 1 {
+        serial_println!("Event: {:?}", event);
+    }
+    serial_println!("{:?}", regs);
 
     if event.pid == 0 {
         x2apic::send_eoi();
         return;
-    } else if event.pid == 1 {
-        serial_println!("Current {:?}", regs);
-        panic!();
     }
-
-    serial_println!("Interrupt process {} on {}", event.pid, cpuid);
+    serial_println!("{:?}", regs);
 
     // // Get PCB from PID
     let mut process_table = PROCESS_TABLE.write();
-    serial_println!("Interrupt process {}", event.pid);
-
     let process = process_table
         .get_mut(&event.pid)
         .expect("Process not found");
-    let mut pcb = process.write();
+    let mut pcb = process.pcb.borrow_mut();
 
     // save to the PCB
     pcb.registers = Arc::new(regs);
 
     // Restore kernel RSP + PC -> RIP from where it stored in run/resume process
-    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
+    // TODO
+
+    // schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
     x2apic::send_eoi();
 }

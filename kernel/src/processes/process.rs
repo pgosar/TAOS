@@ -6,6 +6,7 @@ use crate::processes::{loader::load_elf, registers::Registers};
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
@@ -37,7 +38,18 @@ pub struct PCB {
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
 
-type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<PCB>>>>;
+pub struct UnsafePCB {
+    pub pcb: RefCell<PCB>,
+}
+impl UnsafePCB {
+    fn init(pcb: PCB) -> Self {
+        UnsafePCB {
+            pcb: RefCell::new(pcb),
+        }
+    }
+}
+unsafe impl Sync for UnsafePCB {}
+type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<UnsafePCB>>>>;
 
 // global process table must be thread-safe
 lazy_static::lazy_static! {
@@ -56,6 +68,7 @@ pub fn print_process_table(process_table: &PROCESS_TABLE) {
     }
 
     for (pid, pcb) in table.iter() {
+        let pcb = pcb.pcb.borrow();
         serial_println!(
             "PID {}: State: {:?}, Registers: {:?}, SP: {:#x}, PC: {:#x}",
             pid,
@@ -81,7 +94,7 @@ pub fn create_process(
 
     let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper, kernel_mapper);
 
-    let process = Arc::new(RwLock::new(PCB {
+    let process = Arc::new(UnsafePCB::init(PCB {
         pid,
         state: ProcessState::New,
         kernel_rsp: 0,
@@ -108,7 +121,7 @@ pub fn create_process(
         }),
         pml4_frame: process_pml4_frame,
     }));
-    let pid = process.read().pid;
+    let pid = process.pcb.borrow().pid;
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
     serial_println!("Created process with PID: {}", pid);
     // schedule process (call from main)
@@ -157,7 +170,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // Do not lock lowest common denominator
     // Once kernel threads are in, will need lock around PCB
     // But not TCB
-    let process = process.read();
+    let process = process.pcb.borrow();
 
     Cr3::write(process.pml4_frame, Cr3Flags::empty());
 
@@ -165,8 +178,6 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     let user_ds = gdt::GDT.1.user_data_selector.0 as u64;
 
     let registers = &process.registers.clone();
-    // let kernel_rip = &mut process.kernel_rip as *mut u64;
-    drop(process);
 
     asm!(
         "mov rax, {rax}",
@@ -208,7 +219,12 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "push {rflags}",
             "push {cs}",
             "push {rip}",
-            // "mov [{pcb_pc}], 2f",
+
+            "push rax",
+            "mov rax, 2f",
+            "mov [{pcb_pc}], rax",
+            "mov [{pcb_rsp}], rsp",
+            "pop rax",
 
             "sti",
 
@@ -222,7 +238,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             cs = in(reg) user_cs,
             rip = in(reg) registers.rip,
 
-            // pcb_pc = in(reg) kernel_rip
+            pcb_pc = in(reg) &process.kernel_rip,
+            pcb_rsp = in(reg) &process.kernel_rsp,
         );
     }
 
