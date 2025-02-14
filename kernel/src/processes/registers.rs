@@ -5,73 +5,27 @@ macro_rules! push_registers {
     () => {{
         unsafe {
             core::arch::asm!(
-                "sub rsp, 472",
+                "sub rsp, 464",
                 "mov [rsp], rbp",
                 "mov [rsp + 8], r15",
                 "mov [rsp + 16], r14",
                 "mov [rsp + 24], r13",
-                "mov [rsp + 32], rsi",
-                "mov [rsp + 40], r12",
-                "mov [rsp + 48], r11",
-                "mov [rsp + 56], r10",
-                "mov [rsp + 64], r9",
-                "mov [rsp + 72], r8",
+                "mov [rsp + 32], r12",
+                "mov [rsp + 40], r11",
+                "mov [rsp + 48], r10",
+                "mov [rsp + 56], r9",
+                "mov [rsp + 64], r8",
+                "mov [rsp + 72], rdi",
                 "mov [rsp + 80], rsi",
                 "mov [rsp + 88], rdx",
                 "mov [rsp + 96], rcx",
-                "mov [rsp + 104], rbp",
+                "mov [rsp + 104], rbx",
                 "mov [rsp + 112], rax",
-                "add rsp, 472",
-                // "push rax",
-                // "push rbx"
-                // "push rcx",
-                // "push rdx",
-                // "push rsi",
-                // "push rdi",
-                // "push r8",
-                // "push r9",
-                // "push r10",
-                // "push r11",
-                // "push r12",
-                // "push r13",
-                // "push r14",
-                // "push r15",
-                // "push rbp",
+                "add rsp, 464",
                 options(preserves_flags),
             );
         }
     }};
-}
-
-#[macro_export]
-macro_rules! pop_registers {
-    () => {{
-        unsafe {
-            core::arch::asm!(
-                "pop rbp",
-                "pop r15",
-                "pop r14",
-                "pop r13",
-                "pop r12",
-                "pop r11",
-                "pop r10",
-                "pop r9",
-                "pop r8",
-                "pop rdi",
-                "pop rsi",
-                "pop rdx",
-                "pop rcx",
-                "pop rbx",
-                "pop rax",
-                options(nostack)
-            );
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! load_registers {
-    ($regs:expr) => {};
 }
 
 #[derive(Clone, Copy)]
