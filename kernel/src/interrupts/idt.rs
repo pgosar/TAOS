@@ -147,6 +147,8 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
         .get_mut(&event.pid)
         .expect("Process not found");
 
+    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
+
     unsafe {
         let pcb = process.pcb.get();
 
@@ -155,6 +157,8 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
 
         serial_println!("PCB: {:#X?}", *pcb);
         serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
+
+        x2apic::send_eoi();
 
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
         core::arch::asm!(
@@ -166,7 +170,4 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             in(reg) (*pcb).kernel_rip
         );
     }
-
-    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
-    x2apic::send_eoi();
 }
