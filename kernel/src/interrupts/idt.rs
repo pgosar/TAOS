@@ -160,7 +160,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
         core::arch::asm!(
             "mov rsp, {0}",
             "push {1}",
-            "stc",
+            "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
             "ret",
             in(reg) (*pcb).kernel_rsp,
             in(reg) (*pcb).kernel_rip

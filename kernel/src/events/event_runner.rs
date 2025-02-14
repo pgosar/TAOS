@@ -14,7 +14,7 @@ use core::{
 
 use crossbeam_queue::ArrayQueue;
 
-use crate::constants::events::{MAX_EVENTS, NUM_EVENT_PRIORITIES};
+use crate::{constants::events::{MAX_EVENTS, NUM_EVENT_PRIORITIES}, serial_println};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
@@ -75,6 +75,7 @@ impl EventRunner {
                         interrupts::disable();
                     }
                     let ready: bool = future_guard.as_mut().poll(&mut context) != Poll::Pending;
+                    serial_println!("Poll ready: {}", ready);
                     if event.pid == 0 {
                         interrupts::enable();
                     }

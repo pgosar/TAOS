@@ -6,7 +6,7 @@ use crate::processes::{loader::load_elf, registers::Registers};
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::cell::{RefCell, UnsafeCell};
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
@@ -213,7 +213,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
-        let rip_after: usize;
+        let rip_after: usize;   // DEBUG ONLY
 
         asm!(
             "clc",
@@ -223,11 +223,12 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "mov [{pcb_pc}], rax",     
             "mov {test}, rax",         
             "mov rax, rsp",            
-            "add rax, 8",              
+            // "add rax, 8",              
             "mov [{pcb_rsp}], rax", 
 
             "stc", //Only needed when removing "iretq" for debugging purposes
 
+            // Needed for cross-privilege iretq
             "push {ss}",
             "push {userrsp}",
             "push {rflags}",
@@ -242,8 +243,10 @@ pub async unsafe fn run_process_ring3(pid: u32) {
            "call 3f",
            "3:",
            "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
+           "jb 5f",
            "pop rax", 
            "jae 4b",
+           "5:",
            "cli",
 
             ss = in(reg) user_ds,
@@ -273,4 +276,6 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 // restores process state from pcb
 // calls iretq stuff, pushing stuff onto the stack the same as run_process
 //}
-pub async fn resume_process(pid: u32) {}
+pub async fn resume_process(pid: u32) {
+    serial_println!("Resume {}", pid);
+}
