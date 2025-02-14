@@ -172,6 +172,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // But not TCB
     let process = process.pcb.get();
 
+    (*process).state = ProcessState::Running;
+
     Cr3::write((*process).pml4_frame, Cr3Flags::empty());
 
     let user_cs = gdt::GDT.1.user_code_selector.0 as u64;
@@ -213,20 +215,15 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
-        let rip_after: usize;   // DEBUG ONLY
-
         asm!(
             "clc",
             "jmp 2f",
             "4:",
 
             "mov [{pcb_pc}], rax",     
-            "mov {test}, rax",         
             "mov rax, rsp",            
             // "add rax, 8",              
             "mov [{pcb_rsp}], rax", 
-
-            "stc", //Only needed when removing "iretq" for debugging purposes
 
             // Needed for cross-privilege iretq
             "push {ss}",
@@ -238,16 +235,16 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "sti",                  
 
             "iretq",                 
-           // will store program counter to return back to scheduling code
-           "2:",
-           "call 3f",
-           "3:",
-           "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
-           "jb 5f",
-           "pop rax", 
-           "jae 4b",
-           "5:",
-           "cli",
+            // will store program counter to return back to scheduling code
+            "2:",
+            "call 3f",
+            "3:",
+            "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
+            "jb 5f",
+            "pop rax", 
+            "jae 4b",
+            "5:",
+            "cli",
 
             ss = in(reg) user_ds,
             userrsp = in(reg) registers.rsp,
@@ -255,35 +252,14 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             cs = in(reg) user_cs,
             rip = in(reg) registers.rip,
 
-            test = out(reg) rip_after,
-
             pcb_pc = in(reg) &(*process).kernel_rip,
             pcb_rsp = in(reg) &(*process).kernel_rsp,
             out("rax") _
         );
-
-        serial_println!("RET PC FROM INT: {:#x}", rip_after);
-        serial_println!("RET PC OPCODE  : {:#x}", *(rip_after as *const u8));
     }
 
     // rust compiler generates this by default
     // The address of this will be program counter + 4 from the iretq instruction in the load registers macro
     // return Poll::Ready(())
     serial_println!("Returned from process")
-}
-
-// resume_process() {
-// restores process state from pcb
-// calls iretq stuff, pushing stuff onto the stack the same as run_process
-//}
-pub async fn resume_process(pid: u32) {
-    serial_println!("Resume {}", pid);
-
-    // // Get PCB from PID
-    let process_table = PROCESS_TABLE.read();
-    let process = process_table
-        .get(&pid)
-        .expect("Process not found");
-
-    unsafe { serial_println!("PCB: {:?}", *process.pcb.get()) };
 }

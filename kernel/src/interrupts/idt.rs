@@ -6,7 +6,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::constants::idt::TIMER_VECTOR;
 use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
-use crate::processes::process::{resume_process, ProcessState, PROCESS_TABLE};
+use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
 use crate::processes::registers::Registers;
 use crate::{prelude::*, push_registers};
 
@@ -96,6 +96,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
+    interrupts::disable();
     push_registers!();
     let mut regs = unsafe {
         let rsp_after: usize;
@@ -105,7 +106,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
 
         // RSP, RIP, and RFLAGS are saved by the interrupt stack frame
         //num registers 15
-        let stack_ptr = (rsp_after as *const u64).byte_offset(-472); // TODO ewwwwwwwww
+        let stack_ptr = (rsp_after as *const u64).byte_offset(-472);
         Registers {
             rax: *stack_ptr.add(14),
             rbx: *stack_ptr.add(13),
@@ -139,8 +140,6 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     regs.rsp = stack_frame.stack_pointer.as_u64();
     regs.rflags = stack_frame.cpu_flags.bits();
 
-    serial_println!("{:?}", regs);
-
     // // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
@@ -160,9 +159,8 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 
-    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
-
     unsafe {
+        schedule(cpuid, run_process_ring3(event.pid), event.priority, event.pid);
 
         x2apic::send_eoi();
 
@@ -171,6 +169,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             "mov rsp, {0}",
             "push {1}",
             "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
+            "sti",
             "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
