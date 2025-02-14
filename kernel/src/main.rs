@@ -339,8 +339,10 @@ extern "C" fn kmain() -> ! {
 
     // This loads in the binary and creates a process
     let pid = create_process(BINARY, &mut mapper, hhdm_offset);
-    print_process_table(&PROCESS_TABLE);
-    unsafe { schedule(bsp_id, run_process_ring3(pid), 0, pid) };
+    unsafe { 
+        print_process_table(&PROCESS_TABLE);
+        schedule(bsp_id, run_process_ring3(pid), 0, pid) 
+    };
 
     serial_println!("BSP entering event loop");
 

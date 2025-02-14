@@ -6,7 +6,7 @@ use crate::processes::{loader::load_elf, registers::Registers};
 use crate::serial_println;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::cell::RefCell;
+use core::cell::{RefCell, UnsafeCell};
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
@@ -39,12 +39,12 @@ pub struct PCB {
 }
 
 pub struct UnsafePCB {
-    pub pcb: RefCell<PCB>,
+    pub pcb: UnsafeCell<PCB>,
 }
 impl UnsafePCB {
     fn init(pcb: PCB) -> Self {
         UnsafePCB {
-            pcb: RefCell::new(pcb),
+            pcb: UnsafeCell::new(pcb),
         }
     }
 }
@@ -57,7 +57,7 @@ lazy_static::lazy_static! {
     pub static ref PROCESS_TABLE: ProcessTable = Arc::new(RwLock::new(BTreeMap::new()));
 }
 
-pub fn print_process_table(process_table: &PROCESS_TABLE) {
+pub unsafe fn print_process_table(process_table: &PROCESS_TABLE) {
     let table = process_table.read();
     serial_println!("\nProcess Table Contents:");
     serial_println!("========================");
@@ -68,14 +68,14 @@ pub fn print_process_table(process_table: &PROCESS_TABLE) {
     }
 
     for (pid, pcb) in table.iter() {
-        let pcb = pcb.pcb.borrow();
+        let pcb = pcb.pcb.get();
         serial_println!(
             "PID {}: State: {:?}, Registers: {:?}, SP: {:#x}, PC: {:#x}",
             pid,
-            pcb.state,
-            pcb.registers,
-            pcb.registers.rsp,
-            pcb.registers.rip
+            (*pcb).state,
+            (*pcb).registers,
+            (*pcb).registers.rsp,
+            (*pcb).registers.rip
         );
     }
     serial_println!("========================");
@@ -121,7 +121,7 @@ pub fn create_process(
         }),
         pml4_frame: process_pml4_frame,
     }));
-    let pid = process.pcb.borrow().pid;
+    let pid = unsafe {(*process.pcb.get()).pid };
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
     serial_println!("Created process with PID: {}", pid);
     // schedule process (call from main)
@@ -170,14 +170,14 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // Do not lock lowest common denominator
     // Once kernel threads are in, will need lock around PCB
     // But not TCB
-    let process = process.pcb.borrow();
+    let process = process.pcb.get();
 
-    Cr3::write(process.pml4_frame, Cr3Flags::empty());
+    Cr3::write((*process).pml4_frame, Cr3Flags::empty());
 
     let user_cs = gdt::GDT.1.user_code_selector.0 as u64;
     let user_ds = gdt::GDT.1.user_data_selector.0 as u64;
 
-    let registers = &process.registers.clone();
+    let registers = &(*process).registers.clone();
 
     asm!(
         "mov rax, {rax}",
@@ -213,24 +213,38 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
+        let rip_after: usize;
+
         asm!(
+            "clc",
+            "jmp 2f",
+            "4:",
+
+            "mov [{pcb_pc}], rax",     
+            "mov {test}, rax",         
+            "mov rax, rsp",            
+            "add rax, 8",              
+            "mov [{pcb_rsp}], rax", 
+
+            "stc", //Only needed when removing "iretq" for debugging purposes
+
             "push {ss}",
             "push {userrsp}",
             "push {rflags}",
             "push {cs}",
             "push {rip}",
 
-            "push rax",
-            "mov rax, 2f",
-            "mov [{pcb_pc}], rax",
-            "mov [{pcb_rsp}], rsp",
-            "pop rax",
+            "sti",                  
 
-            "sti",
-
-            "iretq",
-            "2:", // will store program counter to return back to scheduling code
-            "nop",
+            "iretq",                 
+           // will store program counter to return back to scheduling code
+           "2:",
+           "call 3f",
+           "3:",
+           "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
+           "pop rax", 
+           "jae 4b",
+           "cli",
 
             ss = in(reg) user_ds,
             userrsp = in(reg) registers.rsp,
@@ -238,9 +252,15 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             cs = in(reg) user_cs,
             rip = in(reg) registers.rip,
 
-            pcb_pc = in(reg) &process.kernel_rip,
-            pcb_rsp = in(reg) &process.kernel_rsp,
+            test = out(reg) rip_after,
+
+            pcb_pc = in(reg) &(*process).kernel_rip,
+            pcb_rsp = in(reg) &(*process).kernel_rsp,
+            out("rax") _
         );
+
+        serial_println!("RET PC FROM INT: {:#x}", rip_after);
+        serial_println!("RET PC OPCODE  : {:#x}", *(rip_after as *const u8));
     }
 
     // rust compiler generates this by default

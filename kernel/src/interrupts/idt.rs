@@ -105,7 +105,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
 
         // RSP, RIP, and RFLAGS are saved by the interrupt stack frame
         //num registers 15
-        let stack_ptr = (rsp_after as *const u64).byte_offset(-464); // TODO ewwwwwwwww
+        let stack_ptr = (rsp_after as *const u64).byte_offset(-472); // TODO ewwwwwwwww
         Registers {
             rax: *stack_ptr.add(14),
             rbx: *stack_ptr.add(13),
@@ -146,13 +146,26 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     let process = process_table
         .get_mut(&event.pid)
         .expect("Process not found");
-    let mut pcb = process.pcb.borrow_mut();
 
-    // save to the PCB
-    pcb.registers = Arc::new(regs);
+    unsafe {
+        let pcb = process.pcb.get();
 
-    // Restore kernel RSP + PC -> RIP from where it stored in run/resume process
-    // TODO
+        // save registers to the PCB
+        (*pcb).registers = Arc::new(regs);
+
+        serial_println!("PCB: {:#X?}", *pcb);
+        serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
+
+        // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
+        core::arch::asm!(
+            "mov rsp, {0}",
+            "push {1}",
+            "stc",
+            "ret",
+            in(reg) (*pcb).kernel_rsp,
+            in(reg) (*pcb).kernel_rip
+        );
+    }
 
     schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
     x2apic::send_eoi();
