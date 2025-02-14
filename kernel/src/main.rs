@@ -343,6 +343,7 @@ extern "C" fn kmain() -> ! {
     unsafe { schedule(bsp_id, run_process_ring3(pid), 0, pid) };
 
     serial_println!("BSP entering event loop");
+
     unsafe { run_loop(bsp_id) };
     // idle_loop();
 }
