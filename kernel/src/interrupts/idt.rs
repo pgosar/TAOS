@@ -6,7 +6,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::constants::idt::TIMER_VECTOR;
 use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
-use crate::processes::process::{resume_process, PROCESS_TABLE};
+use crate::processes::process::{resume_process, ProcessState, PROCESS_TABLE};
 use crate::processes::registers::Registers;
 use crate::{prelude::*, push_registers};
 
@@ -142,21 +142,27 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     serial_println!("{:?}", regs);
 
     // // Get PCB from PID
-    let mut process_table = PROCESS_TABLE.write();
-    let process = process_table
-        .get_mut(&event.pid)
-        .expect("Process not found");
+    let preemption_info = unsafe {
+        let mut process_table = PROCESS_TABLE.write();
+        let process = process_table
+            .get_mut(&event.pid)
+            .expect("Process not found");
 
-    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
-
-    unsafe {
         let pcb = process.pcb.get();
 
         // save registers to the PCB
         (*pcb).registers = Arc::new(regs);
 
+        (*pcb).state = ProcessState::Blocked;
+
         serial_println!("PCB: {:#X?}", *pcb);
         serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
+        ((*pcb).kernel_rsp, (*pcb).kernel_rip)
+    };
+
+    schedule(cpuid, resume_process(event.pid), event.priority, event.pid);
+
+    unsafe {
 
         x2apic::send_eoi();
 
@@ -166,8 +172,8 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             "push {1}",
             "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
             "ret",
-            in(reg) (*pcb).kernel_rsp,
-            in(reg) (*pcb).kernel_rip
+            in(reg) preemption_info.0,
+            in(reg) preemption_info.1
         );
     }
 }

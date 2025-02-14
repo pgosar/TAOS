@@ -278,4 +278,12 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 //}
 pub async fn resume_process(pid: u32) {
     serial_println!("Resume {}", pid);
+
+    // // Get PCB from PID
+    let process_table = PROCESS_TABLE.read();
+    let process = process_table
+        .get(&pid)
+        .expect("Process not found");
+
+    unsafe { serial_println!("PCB: {:?}", *process.pcb.get()) };
 }
