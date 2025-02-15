@@ -121,7 +121,7 @@ pub fn create_process(
         }),
         pml4_frame: process_pml4_frame,
     }));
-    let pid = unsafe {(*process.pcb.get()).pid };
+    let pid = unsafe { (*process.pcb.get()).pid };
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
     serial_println!("Created process with PID: {}", pid);
     // schedule process (call from main)
@@ -220,10 +220,10 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "jmp 2f",
             "4:",
 
-            "mov [{pcb_pc}], rax",     
-            "mov rax, rsp",            
-            // "add rax, 8",              
-            "mov [{pcb_rsp}], rax", 
+            "mov [{pcb_pc}], rax",
+            "mov rax, rsp",
+            // "add rax, 8",
+            "mov [{pcb_rsp}], rax",
 
             // Needed for cross-privilege iretq
             "push {ss}",
@@ -232,16 +232,16 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "push {cs}",
             "push {rip}",
 
-            "sti",                  
+            "sti",
 
-            "iretq",                 
+            "iretq",
             // will store program counter to return back to scheduling code
             "2:",
             "call 3f",
             "3:",
             "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
             "jb 5f",
-            "pop rax", 
+            "pop rax",
             "jae 4b",
             "5:",
             "cli",

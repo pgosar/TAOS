@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::constants::idt::TIMER_VECTOR;
+use crate::constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR};
 use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
 use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
@@ -21,6 +21,9 @@ lazy_static! {
                 .set_stack_index(0);
         }
         idt[TIMER_VECTOR].set_handler_fn(timer_handler);
+        idt[SYSCALL_HANDLER]
+            .set_handler_fn(syscall_handler)
+            .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         idt
     };
 }
@@ -160,7 +163,12 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     };
 
     unsafe {
-        schedule(cpuid, run_process_ring3(event.pid), event.priority, event.pid);
+        schedule(
+            cpuid,
+            run_process_ring3(event.pid),
+            event.priority,
+            event.pid,
+        );
 
         x2apic::send_eoi();
 
@@ -174,5 +182,18 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
         );
+    }
+}
+
+extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
+    unsafe {
+        // I believe we need to save registers
+        core::arch::asm!(
+            "push rax",
+            "call dispatch_syscall",
+            "pop rax",
+            "iretq",
+            options(noreturn)
+        )
     }
 }
