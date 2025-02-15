@@ -99,7 +99,6 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
-    interrupts::disable();
     push_registers!();
     let mut regs = unsafe {
         let rsp_after: usize;
@@ -143,7 +142,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     regs.rsp = stack_frame.stack_pointer.as_u64();
     regs.rflags = stack_frame.cpu_flags.bits();
 
-    // // Get PCB from PID
+    // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
         let process = process_table
@@ -177,7 +176,6 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             "mov rsp, {0}",
             "push {1}",
             "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
-            "sti",
             "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
