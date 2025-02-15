@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::interrupts::gdt;
 use crate::memory::frame_allocator::alloc_frame;
 use crate::processes::{loader::load_elf, registers::Registers};
-use crate::serial_println;
+use crate::{restore_registers, serial_println};
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
@@ -181,37 +181,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     let registers = &(*process).registers.clone();
 
-    asm!(
-        "mov rax, {rax}",
-        "mov rbx, {rbx}",
-        "mov rcx, {rcx}",
-        "mov rdx, {rdx}",
-        "mov rsi, {rsi}",
-        "mov rdi, {rdi}",
-        "mov r8, {r8}",
-        "mov r9, {r9}",
-        "mov r10, {r10}",
-        "mov r11, {r11}",
-        "mov r12, {r12}",
-        "mov r13, {r13}",
-        "mov r14, {r14}",
-        "mov r15, {r15}",
-
-        rax = in(reg) registers.rax,
-        rbx = in(reg) registers.rbx,
-        rcx = in(reg) registers.rcx,
-        rdx = in(reg) registers.rdx,
-        rsi = in(reg) registers.rsi,
-        rdi = in(reg) registers.rdi,
-        r8 = in(reg) registers.r8,
-        r9 = in(reg) registers.r9,
-        r10 = in(reg) registers.r10,
-        r11 = in(reg) registers.r11,
-        r12 = in(reg) registers.r12,
-        r13 = in(reg) registers.r13,
-        r14 = in(reg) registers.r14,
-        r15 = in(reg) registers.r15,
-    );
+    restore_registers!(registers);
 
     // Stack layout to move into user mode
     unsafe {
