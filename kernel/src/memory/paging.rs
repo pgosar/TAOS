@@ -13,7 +13,7 @@ use crate::{
     },
     constants::idt::TLB_SHOOTDOWN_VECTOR,
     interrupts::x2apic::X2ApicManager,
-    memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+    memory::{frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR}, tlb::tlb_shootdown},
 };
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
@@ -53,7 +53,7 @@ pub fn create_mapping(
 ) -> PhysFrame {
     let frame = alloc_frame().expect("no more frames");
 
-    let map_to_result = unsafe {
+    let _ = unsafe {
         // FIXME: this is not safe, we do it only for testing
         mapper.map_to(
             page,
@@ -67,11 +67,10 @@ pub fn create_mapping(
                 .lock()
                 .as_mut()
                 .expect("Global allocator not initialized"),
-        )
+        ).expect("Mapping failed")
     };
-    // this invalidates one mapping
-    map_to_result.expect("map_to failed").flush();
-    frame
+
+    tlb_shootdown(page.start_address());
 }
 
 /// updates an existing mapping

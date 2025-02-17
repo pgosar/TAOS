@@ -15,7 +15,7 @@ use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 use crate::constants::idt::TIMER_VECTOR;
 use crate::constants::MAX_CORES;
 use crate::serial_println;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use raw_cpuid::CpuId;
 use x86_64::instructions::port::Port;
 use x86_64::registers::model_specific::Msr;
@@ -37,7 +37,11 @@ const CHANNEL_2_PORT: u16 = 0x42;
 const COMMAND_PORT: u16 = 0x43;
 const CONTROL_PORT: u16 = 0x61;
 
-/// Errors that can occur during x2APIC operations
+pub static TLB_SHOOTDOWN_ADDR: [AtomicU64; MAX_CORES] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0)
+];
+
 #[derive(Debug)]
 pub enum X2ApicError {
     /// x2APIC feature not supported by CPU
@@ -200,7 +204,7 @@ impl X2ApicManager {
         // just want index
         unsafe {
             for i in 0..APIC_MANAGER.apics.len() { // deal
-                serial_println!("Sending index {}", i);
+                serial_println!("Sending index ipi to core {}", i);
 
                 send_ipi(i as u32, vector);
             }

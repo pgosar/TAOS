@@ -1,10 +1,8 @@
-//! Interrupt handling and management.
-//!
-//! This module provides:
-//! - Interrupt Descriptor Table (IDT) setup
-//! - Exception handlers (breakpoint, page fault, double fault, etc.)
-//! - Timer interrupt handling
-//! - Functions to enable/disable interrupts
+use core::sync::atomic::Ordering;
+
+use lazy_static::lazy_static;
+use x86_64::instructions::interrupts;
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
@@ -25,7 +23,7 @@ use crate::{
 };
 use crate::constants::idt::TIMER_VECTOR;
 use crate::constants::idt::TLB_SHOOTDOWN_VECTOR;
-use crate::interrupts::x2apic;
+use crate::interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR};
 use crate::{debug, prelude::*};
 
 lazy_static! {
@@ -279,9 +277,12 @@ fn timer_handler(rsp: u64) {
 
 extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
     debug!("tlb shootdown handler");
-    // flushes whole TLB for this core
-    // FIXME: make it so only one entry is flushed
-    unsafe {
-        core::arch::asm!("mov rax, cr3", "mov cr3, rax");
+    let core = current_core_id();
+    let vaddr_to_invalidate = TLB_SHOOTDOWN_ADDR[core].load(Ordering::SeqCst);
+    if vaddr_to_invalidate != 0 {
+        unsafe {
+            core::arch::asm!("invlpg [{}]", in (reg) vaddr_to_invalidate, options(nostack, preserves_flags));
+        }
+        TLB_SHOOTDOWN_ADDR[core].store(0, Ordering::SeqCst);
     }
 }
