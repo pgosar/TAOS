@@ -5,7 +5,6 @@ use x86_64::instructions::port::{
     self, PortGeneric, ReadOnlyAccess, ReadWriteAccess, WriteOnlyAccess,
 };
 
-#[warn(missing_docs)]
 use crate::debug_println;
 
 /// The port used for setting the address of  PCI configuration
@@ -27,13 +26,13 @@ bitflags! {
         /// If set the SERR# Driver is enabled
         const SERR_ENABLE = 1 << 8;
         /// If set the device will take normal action when a parity error is
-        /// detected. If unset, the device will continue operation as if 
+        /// detected. If unset, the device will continue operation as if
         /// a parity error did not happen (but the device will still set bit 15)
         /// of the status register
         const PARITY_ERROR_RESPONSE = 1 << 6;
         /// Set the device will snoop data from pallete register writes. Read Only.
         const VGA_PALLETE_SNOOP = 1 << 5;
-        /// Set if the device can issue a Memory Write and Invalidate command. 
+        /// Set if the device can issue a Memory Write and Invalidate command.
         /// Read Only
         const MEMORY_WRITE_AND_INVILIDATE_ENABLE = 1 << 4;
         /// Set if the device can monitor Special Cycle Operations. Read Only
@@ -49,8 +48,8 @@ bitflags! {
 }
 
 #[derive(Debug)]
-/// A generic representation of a single funcion pci 
-/// device. To note 
+/// A generic representation of a single funcion pci
+/// device. To note
 pub struct DeviceInfo {
     /// The bus that this device is on
     pub bus: u8,
@@ -60,18 +59,18 @@ pub struct DeviceInfo {
     pub device_id: u16,
     /// The identifier for the Manufacturer of this device
     pub vendor_id: u16,
-    /// A cached status of this PCI device. If your driver expects any of 
+    /// A cached status of this PCI device. If your driver expects any of
     /// these bits to change after boot, this should be re-checked
     pub status: u16,
-    /// A cached status of which commands are currently active. Writing 
-    /// to this field has no effect, one should use the function 
-    /// write_pci_command 
+    /// A cached status of which commands are currently active. Writing
+    /// to this field has no effect, one should use the function
+    /// write_pci_command
     pub command: PCICommand,
-    /// The class code of the PCI device. This holds the general type of 
+    /// The class code of the PCI device. This holds the general type of
     /// device. For example class code 0x9 is an Input Device Controller
     pub class_code: u8,
     /// Used to further differentate devices along with the class code. For
-    /// example a pci device with class code 0x9 and subclass 0x0 is a 
+    /// example a pci device with class code 0x9 and subclass 0x0 is a
     /// Keyboard Controller
     pub subclass: u8,
     /// The programming interface that the device uses. Further differentates
@@ -79,9 +78,9 @@ pub struct DeviceInfo {
     pub programming_interface: u8,
     /// A revision identifer for this device. This code is vendor specific
     pub revision_id: u8,
-    /// Represents a devices Built In Self Test. 
+    /// Represents a devices Built In Self Test.
     pub built_in_self_test: u8,
-    /// Determines the layout of the rest of the PCI header. Currently only 
+    /// Determines the layout of the rest of the PCI header. Currently only
     /// header_type 0x0 is supported (A general PCi device)
     pub header_type: u8,
     /// Says the latency timer in terms of pci bus clocks
@@ -175,8 +174,8 @@ pub fn write_pci_command(bus: u8, device: u8, function: u8, command: PCICommand)
     }
 }
 
-/// Determines if a device is connected to the given bus and device pair. If 
-/// no device is connected then returns None. Othwewise returns data to find the 
+/// Determines if a device is connected to the given bus and device pair. If
+/// no device is connected then returns None. Othwewise returns data to find the
 /// device in the DeviceInfo struct
 fn device_connected(bus: u8, device: u8) -> Option<DeviceInfo> {
     let mut config_word = read_config(bus, device, 0, 0);
@@ -255,8 +254,8 @@ pub fn print_pci_info(device: &DeviceInfo) {
     });
 }
 
-/// Determines all devices connected to the PCI bus. Does not currently have 
-/// support for multi function devices. 
+/// Determines all devices connected to the PCI bus. Does not currently have
+/// support for multi function devices.
 pub fn walk_pci_bus() -> Vec<Arc<Mutex<DeviceInfo>>> {
     let mut bus: u16 = 0;
     let mut devices = Vec::new();

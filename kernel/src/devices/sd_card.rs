@@ -18,14 +18,14 @@ use crate::{
 use bitflags::bitflags;
 
 use super::pci::{read_config, DeviceInfo, PCICommand};
-/// Used to get access to the sd card in the system. Multiple SD cards 
+/// Used to get access to the sd card in the system. Multiple SD cards
 /// are NOT supported
 pub static SD_CARD: Mutex<Option<SDCardInfo>> = Mutex::new(Option::None);
 
 #[derive(Debug, Clone)]
-/// A struct storing data of an sd card that can be recieved without 
+/// A struct storing data of an sd card that can be recieved without
 /// booting the card.
-/// 
+///
 /// SDCardInfo still has data like the relative_card_address that can not be
 /// determined until the sd card has somewhat initalized.
 struct SDCardInfoInternal {
@@ -37,10 +37,10 @@ struct SDCardInfoInternal {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-/// Represents an SD Card. Is used by all functions that interface with 
+/// Represents an SD Card. Is used by all functions that interface with
 /// an sd card, and is returned by initalize_sd_card  
 pub struct SDCardInfo {
-    /// Stores data that can be determined without needing to fully initalize 
+    /// Stores data that can be determined without needing to fully initalize
     /// the card, most importantly the base address register
     internal_info: SDCardInfoInternal,
     /// Stores the block size of this sd card
@@ -73,25 +73,25 @@ pub enum SDCardError {
 #[allow(dead_code)]
 #[derive(Debug)]
 /// Stores the respones of an SD Command. This is fully determined by the
-/// response type of the command. 
+/// response type of the command.
 enum SDCommandResponse {
     /// Used when no response is published to the response register
     NoResponse,
-    /// Used when the device publishes a 32 bit response to the response 
+    /// Used when the device publishes a 32 bit response to the response
     /// register. This also incluces when the response is in the upper 32 bits
     /// of the register
     Response32Bits(u32),
     /// Used when the device publishes a 128 bit response to the response register
-    /// The data in here is shifted 8 bits over as the CRC bits are not sent 
-    /// to the response register, but they are present in the Physical 
+    /// The data in here is shifted 8 bits over as the CRC bits are not sent
+    /// to the response register, but they are present in the Physical
     /// Specification, which contains what each bit of the command means.
     Response128Bits(u128),
 }
 
 #[allow(dead_code)]
-/// The types of response that an SD Command Returns. Even if these 
-/// say they return the same response type. One should use the appropate 
-/// response type as this determines which checks get enabled. All response 
+/// The types of response that an SD Command Returns. Even if these
+/// say they return the same response type. One should use the appropate
+/// response type as this determines which checks get enabled. All response
 /// types except for R0 and R2 return a 32 bit response.
 enum SDResponseTypes {
     /// Responds as NoRespone
@@ -373,7 +373,7 @@ fn software_reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardErro
 }
 
 /// Enables most interrupts of the sd card
-/// 
+///
 /// Curently we do not have an interrupt handler set up
 fn enable_sd_card_interrupts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let normal_intr_status_addr = (sd_card.base_address_register + 0x34) as *mut u16;
@@ -399,17 +399,11 @@ fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     unsafe { core::ptr::write_volatile(power_control_addr, 0) };
     // Use maximum voltage that capabiltieis shows
     let mut power_control;
-    if Capabilities::Voltage3_3Support
-        .intersects(sd_card.capabilities)
-    {
+    if Capabilities::Voltage3_3Support.intersects(sd_card.capabilities) {
         power_control = 0b111 << 1;
-    } else if Capabilities::Voltage1_8Support
-        .intersects(sd_card.capabilities)
-    {
+    } else if Capabilities::Voltage1_8Support.intersects(sd_card.capabilities) {
         power_control = 0b101 << 1;
-    } else if Capabilities::Voltage3_0Support
-        .intersects(sd_card.capabilities)
-    {
+    } else if Capabilities::Voltage3_0Support.intersects(sd_card.capabilities) {
         power_control = 0b110 << 1;
     } else {
         return Result::Err(SDCardError::VoltageUnableToBeSet);
@@ -465,7 +459,6 @@ fn enable_timeouts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     sending_command_valid(sd_card)?;
     Result::Ok(())
 }
-
 
 /// Resets and initallizes an sd card using only sd card commands
 fn send_sd_reset_commands(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SDCardError> {
@@ -705,7 +698,7 @@ fn determine_sd_card_response(
     }
 }
 
-/// Reads data from a sd card, returning it as  a return value unless an Error 
+/// Reads data from a sd card, returning it as  a return value unless an Error
 /// Occurred
 pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCardError> {
     let internal_info = &sd_card.internal_info;
