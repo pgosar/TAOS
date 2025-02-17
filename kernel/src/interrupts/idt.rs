@@ -6,9 +6,9 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR};
 use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
+use crate::prelude::*;
 use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
 use crate::processes::registers::Registers;
-use crate::prelude::*;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {

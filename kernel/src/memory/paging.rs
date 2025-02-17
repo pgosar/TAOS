@@ -6,12 +6,10 @@ use x86_64::{
 };
 
 use crate::constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START;
-use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
-use limine::request::HhdmRequest;
-
-#[used]
-#[link_section = ".requests"]
-pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+use crate::memory::{
+    frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+    HHDM_OFFSET,
+};
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
@@ -21,13 +19,7 @@ static mut NEXT_EPH_OFFSET: u64 = 0;
 ///
 /// TODO
 pub unsafe fn init() -> OffsetPageTable<'static> {
-    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
-
-    let hhdm_base: VirtAddr = VirtAddr::new(hhdm_response.offset());
-
-    let pml4 = active_level_4_table(hhdm_base);
-
-    OffsetPageTable::new(pml4, hhdm_base)
+    OffsetPageTable::new(active_level_4_table(*HHDM_OFFSET), *HHDM_OFFSET)
 }
 
 /// activates pml4

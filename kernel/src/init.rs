@@ -4,7 +4,6 @@ use limine::{
     smp::{Cpu, RequestFlags},
     BaseRevision,
 };
-use x86_64::VirtAddr;
 
 use crate::{
     debug, devices,
@@ -13,17 +12,7 @@ use crate::{
     logging, memory, trace,
 };
 
-use crate::{
-    constants::processes::BINARY,
-    events::schedule,
-    memory::paging::HHDM_REQUEST,
-};
-
 extern crate alloc;
-use crate::{
-    processes::process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
-    serial_println,
-};
 
 #[used]
 #[link_section = ".requests"]
@@ -71,23 +60,6 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     idt::enable();
 
     register_event_runner(cpu.id);
-    if cpu.id == 1 {
-    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
-
-    let hhdm_base: VirtAddr = VirtAddr::new(hhdm_response.offset());
-    let mut mapper = crate::memory::MAPPER.lock();
-    unsafe {
-        // this must be the issue then
-        // it seems as if its trying to schedule on both cores
-        // do yk where the secondary cpu stuff went that was previously in main?
-        // oh good point, lemme find out
-        // init.rs
-        serial_println!("Current CPU ID {}", 1);
-        let pid = create_process(BINARY, &mut *mapper, hhdm_base);
-        print_process_table(&PROCESS_TABLE);
-        schedule(1, run_process_ring3(pid), 0, pid)
-    };
-}
     debug!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)
 }

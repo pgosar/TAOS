@@ -7,11 +7,17 @@ pub mod paging;
 use boot_frame_allocator::BootIntoFrameAllocator;
 use frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR};
 use lazy_static::lazy_static;
+use limine::request::HhdmRequest;
 use spin::Mutex;
 use x86_64::{
     registers::model_specific::{Efer, EferFlags},
     structures::paging::OffsetPageTable,
+    VirtAddr,
 };
+
+#[used]
+#[link_section = ".requests"]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 extern "C" {
     static _kernel_end: u64;
@@ -19,6 +25,12 @@ extern "C" {
 
 lazy_static! {
     pub static ref MAPPER: Mutex<OffsetPageTable<'static>> = Mutex::new(unsafe { paging::init() });
+    pub static ref HHDM_OFFSET: VirtAddr = VirtAddr::new(
+        HHDM_REQUEST
+            .get_response()
+            .expect("HHDM request failed")
+            .offset()
+    );
 }
 
 pub fn init(cpu_id: u32) {
