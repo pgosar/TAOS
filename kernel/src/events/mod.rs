@@ -6,7 +6,7 @@ use spin::rwlock::RwLock;
 
 use core::{future::Future, pin::Pin, sync::atomic::AtomicU64, sync::atomic::Ordering};
 
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::SegQueue;
 
 use crate::constants::events::NUM_EVENT_PRIORITIES;
 
@@ -17,7 +17,7 @@ mod event_runner;
 type SendFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;
 
 // Thread-safe static queue of events
-type EventQueue = Arc<ArrayQueue<Arc<Event>>>;
+type EventQueue = Arc<SegQueue<Arc<Event>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct EventId(u64);

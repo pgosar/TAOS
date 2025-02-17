@@ -23,9 +23,6 @@ impl Event {
 
 impl ArcWake for Event {
     fn wake_by_ref(arc: &Arc<Self>) {
-        let r: Result<(), Arc<Event>> = arc.rewake_queue.push(arc.clone());
-        if r.is_err() {
-            panic!("Event queue full!")
-        }
+        arc.rewake_queue.push(arc.clone());
     }
 }

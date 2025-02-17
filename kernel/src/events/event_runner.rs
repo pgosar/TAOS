@@ -11,15 +11,15 @@ use core::{
     task::{Context, Poll},
 };
 
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::SegQueue;
 
-use crate::constants::events::{MAX_EVENTS, NUM_EVENT_PRIORITIES};
+use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 impl EventRunner {
     pub fn init() -> EventRunner {
         EventRunner {
-            event_queues: core::array::from_fn(|_| Arc::new(ArrayQueue::new(MAX_EVENTS))),
-            rewake_queue: Arc::new(ArrayQueue::new(MAX_EVENTS)),
+            event_queues: core::array::from_fn(|_| Arc::new(SegQueue::new())),
+            rewake_queue: Arc::new(SegQueue::new()),
             pending_events: RwLock::new(BTreeSet::new()),
             current_event: None,
         }
@@ -72,12 +72,7 @@ impl EventRunner {
                     drop(future_guard);
 
                     if !ready {
-                        let r: Result<(), Arc<Event>> =
-                            self.event_queues[event.priority].push(event.clone());
-
-                        if r.is_err() {
-                            panic!("Event queue full!")
-                        }
+                        self.event_queues[event.priority].push(event.clone());
                     } else {
                         let mut write_lock = self.pending_events.write();
                         write_lock.remove(&event.eid.0);
@@ -109,16 +104,10 @@ impl EventRunner {
                 priority_level,
                 pid,
             ));
-            let r = self.event_queues[priority_level].push(arc.clone());
-            match r {
-                Err(_) => {
-                    panic!("Event queue full!");
-                }
-                Ok(_) => {
-                    let mut write_lock = self.pending_events.write();
-                    write_lock.insert(arc.eid.0);
-                }
-            }
+
+            self.event_queues[priority_level].push(arc.clone());
+            let mut write_lock = self.pending_events.write();
+            write_lock.insert(arc.eid.0);
         }
     }
 
