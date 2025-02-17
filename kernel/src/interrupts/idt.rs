@@ -26,7 +26,7 @@ use crate::{
 use crate::constants::idt::TIMER_VECTOR;
 use crate::constants::idt::TLB_SHOOTDOWN_VECTOR;
 use crate::interrupts::x2apic;
-use crate::prelude::*;
+use crate::{debug, prelude::*};
 
 lazy_static! {
     /// The system's Interrupt Descriptor Table.
@@ -277,10 +277,11 @@ fn timer_handler(rsp: u64) {
     }
 }
 
-extern "x86-interrupt" fn tlb_shootdown_handler(stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
+    debug!("tlb shootdown handler");
     // flushes whole TLB for this core
     // FIXME: make it so only one entry is flushed
     unsafe {
-        core::arch::asm!("mov %cr3, %rax; mov %rax, %cr3");
+        core::arch::asm!("mov rax, cr3", "mov cr3, rax");
     }
 }

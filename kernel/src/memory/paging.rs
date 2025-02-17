@@ -11,6 +11,9 @@ use crate::{
         frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
         HHDM_OFFSET,
     },
+    constants::idt::TLB_SHOOTDOWN_VECTOR,
+    interrupts::x2apic::X2ApicManager,
+    memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
 };
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
@@ -69,6 +72,32 @@ pub fn create_mapping(
     // this invalidates one mapping
     map_to_result.expect("map_to failed").flush();
     frame
+}
+
+/// updates an existing mapping
+pub fn update_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>, frame: PhysFrame<Size4KiB>) {
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+    let old_frame = mapper
+        .translate_page(page)
+        .expect("No mapping currently exists");
+
+    if old_frame != frame {
+        let map_to_result = unsafe {
+            mapper.map_to(
+                page,
+                frame,
+                flags,
+                FRAME_ALLOCATOR
+                    .lock()
+                    .as_mut()
+                    .expect("Global allocator not initialized"),
+            )
+        };
+
+        map_to_result.expect("Mapping failed").flush();
+        X2ApicManager::send_ipi_all_cores(TLB_SHOOTDOWN_VECTOR).expect("Failed to flush TLBs");
+    }
 }
 
 pub fn remove_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {

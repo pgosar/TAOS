@@ -65,6 +65,7 @@ pub fn init() -> u32 {
         print_process_table(&PROCESS_TABLE);
         schedule(1, run_process_ring3(pid), 0, pid)
     };
+    X2ApicManager::send_ipi_all_cores(constants::idt::TLB_SHOOTDOWN_VECTOR).expect("could not sned ipi");
 
     bsp_id
 }
