@@ -6,6 +6,7 @@ macro_rules! push_registers {
         unsafe {
             core::arch::asm!(
                 "sub rsp, 472",
+                "mov rax, [rsp + 1864]",
                 "mov [rsp], rbp",
                 "mov [rsp + 8], r15",
                 "mov [rsp + 16], r14",

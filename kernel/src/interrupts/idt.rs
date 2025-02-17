@@ -100,6 +100,7 @@ extern "x86-interrupt" fn page_fault_handler(
 
 extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     push_registers!();
+
     let mut regs = unsafe {
         let rsp_after: usize;
         core::arch::asm!(
@@ -142,7 +143,7 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
     regs.rsp = stack_frame.stack_pointer.as_u64();
     regs.rflags = stack_frame.cpu_flags.bits();
 
-    // Get PCB from PID
+    // // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
         let process = process_table

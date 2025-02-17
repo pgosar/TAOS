@@ -10,7 +10,6 @@ use limine::response::MemoryMapResponse;
 use limine::smp::{Cpu, RequestFlags};
 use limine::BaseRevision;
 use taos::constants::{processes::BINARY, x2apic::CPU_FREQUENCY};
-use taos::events::futures::print_nums_after_rand_delay;
 use taos::events::{register_event_runner, run_loop, schedule};
 use taos::interrupts::{gdt, idt, x2apic};
 use taos::processes::process::{
@@ -73,30 +72,6 @@ static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
     static _kernel_end: u64;
-}
-
-// ASYNC
-async fn test_sum(start: u64) -> u64 {
-    let mut sum: u64 = start;
-    const MAX: u64 = 10000000;
-    for i in 0..MAX {
-        sum += i;
-        if i == MAX / 2 {
-            serial_println!("Halfway through long event");
-        }
-    }
-    sum
-}
-
-async fn test_event(arg1: u64) {
-    let tv = test_sum(arg1).await;
-    serial_println!("Long event result: {}", tv);
-}
-
-async fn test_event_two_blocks(arg1: u64) {
-    let tv = test_sum(arg1).await;
-    let tv2 = test_sum(arg1 * 2).await;
-    serial_println!("Long events results: {} {}", tv, tv2);
 }
 
 #[no_mangle]
@@ -328,15 +303,6 @@ extern "C" fn kmain() -> ! {
         }
     }
 
-    // ASYNC
-    // schedule(bsp_id, print_nums_after_rand_delay(0x1332), 3, 0);
-    // schedule(bsp_id, print_nums_after_rand_delay(0x532), 2, 0);
-    // schedule(bsp_id, test_event_two_blocks(400), 0, 0);
-    // schedule(bsp_id, test_event(100), 3, 0);
-
-    // // Try giving something to CPU 2 (note this is not how it'll be done for real, just a test)
-    // schedule(1, test_event(353), 1, 0);
-
     // This loads in the binary and creates a process
     let pid = create_process(BINARY, &mut mapper, hhdm_offset);
     unsafe { 
@@ -379,8 +345,6 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
 
     // ASYNC
     register_event_runner(cpu.id);
-
-    // schedule(cpu.id, test_event(200), 2, 0);
 
     serial_println!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)

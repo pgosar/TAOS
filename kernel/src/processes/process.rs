@@ -195,6 +195,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             // "add rax, 8",
             "mov [{pcb_rsp}], rax",
 
+            "mov rax, 255",
+
             // Needed for cross-privilege iretq
             "push {ss}",
             "push {userrsp}",
