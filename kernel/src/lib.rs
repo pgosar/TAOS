@@ -10,6 +10,8 @@
 //! The TAOS operating system
 extern crate alloc;
 
+use constants::x2apic;
+use interrupts::x2apic::X2ApicManager;
 use x86_64::instructions::hlt;
 
 pub mod constants;

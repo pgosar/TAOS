@@ -12,6 +12,14 @@ use raw_cpuid::CpuId;
 use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 
 /// MSR register addresses for x2APIC control
+use crate::constants::idt::TIMER_VECTOR;
+use crate::constants::MAX_CORES;
+use crate::serial_println;
+use core::sync::atomic::{AtomicU32, Ordering};
+use raw_cpuid::CpuId;
+use x86_64::instructions::port::Port;
+use x86_64::registers::model_specific::Msr;
+// MSR register constants
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const X2APIC_EOI: u32 = 0x80B;
 const X2APIC_SIVR: u32 = 0x80F;
@@ -103,6 +111,7 @@ impl X2ApicManager {
         unsafe {
             APIC_MANAGER.apics[id] = Some(apic);
         }
+
         Ok(())
     }
 
@@ -182,10 +191,23 @@ impl X2ApicManager {
         Ok(())
     }
 
-    /// Initializes x2APIC for the Bootstrap Processor (BSP)
-    ///
-    /// # Arguments
-    /// * `hz` - Desired timer frequency in Hertz
+    #[inline(always)]
+    pub fn send_ipi_all_cores(vector: u8) -> Result<(), X2ApicError> {
+        if vector < 16 {
+            return Err(X2ApicError::InvalidVector);
+        }
+
+        // just want index
+        unsafe {
+            for i in 0..APIC_MANAGER.apics.len() { // deal
+                serial_println!("Sending index {}", i);
+
+                send_ipi(i as u32, vector);
+            }
+        }
+        Ok(())
+    }
+
     pub fn bsp_init(hz: u32) -> Result<(), X2ApicError> {
         // First calibrate the timer
         let count = Self::calibrate_timer(hz)?;
@@ -212,6 +234,7 @@ pub struct X2Apic {
     enabled: bool,
 }
 
+// ASKDJLAJD : does each CPU initialize itself? @Anoop
 impl X2Apic {
     /// Creates a new x2APIC instance if supported by the CPU
     fn new() -> Result<Self, X2ApicError> {
@@ -349,6 +372,11 @@ pub fn send_ipi(target_id: u32, vector: u8) {
 }
 
 /// Mask the APIC timer
+#[inline(always)]
+pub fn send_ipi_all_cores(vector: u8) {
+    X2ApicManager::send_ipi_all_cores(vector).expect("Failed sending IPI");
+}
+
 #[inline(always)]
 pub fn mask_timer() {
     X2ApicManager::mask_timer().expect("Failed to mask timer");

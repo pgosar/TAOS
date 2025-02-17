@@ -23,6 +23,10 @@ use crate::{
         registers::Registers,
     },
 };
+use crate::constants::idt::TIMER_VECTOR;
+use crate::constants::idt::TLB_SHOOTDOWN_VECTOR;
+use crate::interrupts::x2apic;
+use crate::prelude::*;
 
 lazy_static! {
     /// The system's Interrupt Descriptor Table.
@@ -270,5 +274,13 @@ fn timer_handler(rsp: u64) {
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
         );
+    }
+}
+
+extern "x86-interrupt" fn tlb_shootdown_handler(stack_frame: InterruptStackFrame) {
+    // flushes whole TLB for this core
+    // FIXME: make it so only one entry is flushed
+    unsafe {
+        core::arch::asm!("mov %cr3, %rax; mov %rax, %cr3");
     }
 }

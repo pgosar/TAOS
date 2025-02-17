@@ -66,8 +66,7 @@ pub fn create_mapping(
                 .expect("Global allocator not initialized"),
         )
     };
-
-    // serial_println!("Allocated page with flags: {}", flags.unwrap_or(PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits());
+    // this invalidates one mapping
     map_to_result.expect("map_to failed").flush();
     frame
 }

@@ -18,6 +18,7 @@ use crate::{
     memory::{self},
     processes::process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
     serial_println, trace,
+    constants, debug, devices, events::{register_event_runner, run_loop}, interrupts::{self, idt, x2apic::X2ApicManager}, logging, memory, trace
 };
 
 extern crate alloc;
