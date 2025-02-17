@@ -35,16 +35,6 @@ extern "C" fn _start() -> ! {
 
     debug!("BSP entering event loop");
 
-    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
-
-    let hhdm_base: VirtAddr = VirtAddr::new(hhdm_response.offset());
-    let mut mapper = taos::memory::MAPPER.lock();
-    let pid = create_process(BINARY, &mut *mapper, hhdm_base);
-    unsafe {
-        print_process_table(&PROCESS_TABLE);
-        schedule(bsp_id, run_process_ring3(pid), 0, pid)
-    };
-
     unsafe { run_loop(bsp_id) }
 }
 

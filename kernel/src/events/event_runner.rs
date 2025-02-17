@@ -52,10 +52,12 @@ impl EventRunner {
                     }
                 }
 
-                let potential_event = self.next_event();
+                self.current_event = self.next_event();
 
-                let event =
-                    potential_event.expect("Have pending events, but empty waiting queues.");
+                let event = self
+                    .current_event
+                    .as_ref()
+                    .expect("Have pending events, but empty waiting queues.");
 
                 let pe_read_lock = self.pending_events.read();
                 if pe_read_lock.contains(&event.eid.0) {

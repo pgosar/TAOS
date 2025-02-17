@@ -74,6 +74,9 @@ pub fn schedule(
     runner.schedule(future, priority_level, pid);
 }
 
+// still happens even if i lock process creation/running to only happen on cpu id 1
+// Something got messed-up in the merge fs
+// i guess you can do a diff :skull:
 pub fn register_event_runner(cpuid: u32) {
     let runner = EventRunner::init();
     let mut write_lock = EVENT_RUNNERS.write();
@@ -107,6 +110,9 @@ pub struct EventInfo {
     pub pid: u32,
 }
 
+// im gonna double check the place where i called create process, it might just be cpu id
+
+// most likely it isn't finding any event
 pub fn current_running_event_info(cpuid: u32) -> EventInfo {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").write();
