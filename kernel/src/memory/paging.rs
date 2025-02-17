@@ -108,6 +108,5 @@ pub unsafe fn update_permissions(
         .update_flags(page, flags)
         .expect("Updating flags failed")
         .flush();
-
     // TODO: Deal with TLB Shootdowns
 }

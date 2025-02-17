@@ -211,7 +211,6 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "2:",
             "call 3f",
             "3:",
-            "nop",   // Also for debug purposes (single-byte NOP opcode is 0x90)
             "jb 5f",
             "pop rax",
             "jae 4b",

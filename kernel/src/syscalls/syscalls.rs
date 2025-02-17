@@ -1,6 +1,12 @@
-use crate::{constants::syscalls::SYSCALL_EXIT, events::{current_running_event_info, EventInfo}, memory::frame_allocator::dealloc_frame, processes::process::{ProcessState, PROCESS_TABLE}, serial_println};
+use crate::{
+    constants::syscalls::SYSCALL_EXIT,
+    events::{current_running_event_info, EventInfo},
+    memory::frame_allocator::dealloc_frame,
+    processes::process::{ProcessState, PROCESS_TABLE},
+    serial_println,
+};
 
-use super::x2apic;
+use crate::interrupts::x2apic;
 
 #[no_mangle]
 extern "C" fn dispatch_syscall() {
@@ -18,18 +24,6 @@ extern "C" fn dispatch_syscall() {
 
 fn sys_exit() {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
-    unsafe {
-        let mut regval: usize;
-        // core::arch::asm!("mov {}, rax", out(reg) regval);
-        // serial_println!("RAX: {:#x}", regval);
-
-        core::arch::asm!("mov {}, rcx", out(reg) regval);
-        serial_println!("RCX: {:#x}", regval);
-
-        core::arch::asm!("mov {}, r15", out(reg) regval);
-        serial_println!("R15: {:#x}", regval);
-    }
-
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
 
@@ -38,7 +32,7 @@ fn sys_exit() {
     }
 
     serial_println!("Process {} exit", event.pid);
-    
+
     // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
@@ -54,8 +48,8 @@ fn sys_exit() {
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 
-    // let (mut process_mapper, process_pml4_frame) =
-    // unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
+    //let (mut process_mapper, process_pml4_frame) =
+    //    unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
     unsafe {
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process

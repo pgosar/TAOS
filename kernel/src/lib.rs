@@ -10,6 +10,7 @@ pub mod filesys;
 pub mod interrupts;
 pub mod memory;
 pub mod processes;
+pub mod syscalls;
 
 pub mod events;
 
