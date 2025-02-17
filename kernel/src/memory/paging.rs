@@ -7,17 +7,33 @@ use x86_64::{
 
 use crate::constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START;
 use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
+use limine::request::HhdmRequest;
+
+#[used]
+#[link_section = ".requests"]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
 /// initializes vmem system. activates pml4 and sets up page tables
-pub unsafe fn init(hhdm_base: VirtAddr) -> OffsetPageTable<'static> {
+///
+/// # Safety
+///
+/// TODO
+pub unsafe fn init() -> OffsetPageTable<'static> {
+    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
+
+    let hhdm_base: VirtAddr = VirtAddr::new(hhdm_response.offset());
+
     let pml4 = active_level_4_table(hhdm_base);
 
     OffsetPageTable::new(pml4, hhdm_base)
 }
 
 /// activates pml4
+/// # Safety
+///
+/// TODO
 pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
     use x86_64::registers::control::Cr3;
 
@@ -98,7 +114,10 @@ pub fn map_kernel_frame(
     temp_virt
 }
 
-//update permissions for a specific page
+///update permissions for a specific page
+/// # Safety
+///
+/// TODO
 pub unsafe fn update_permissions(
     page: Page,
     mapper: &mut impl Mapper<Size4KiB>,

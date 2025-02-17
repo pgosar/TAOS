@@ -1,4 +1,3 @@
-extern crate alloc;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::sync::Arc;
 use alloc::{boxed::Box, collections::btree_set::BTreeSet};
@@ -13,7 +12,6 @@ use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 mod event;
 mod event_runner;
-pub mod futures;
 
 // Thread-safe future that remains pinned to a heap address throughout its lifetime
 type SendFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;
@@ -47,13 +45,16 @@ struct EventRunner {
     event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
     rewake_queue: EventQueue,
     pending_events: RwLock<BTreeSet<u64>>,
-    current_event: Option<Arc<Event>>
+    current_event: Option<Arc<Event>>,
 }
 
 // Global mapping of cores to events
 // TODO will need to expand when distributed, like most globals
 static EVENT_RUNNERS: RwLock<BTreeMap<u32, RwLock<EventRunner>>> = RwLock::new(BTreeMap::new());
 
+/// # Safety
+///
+/// TODO
 pub unsafe fn run_loop(cpuid: u32) -> ! {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").as_mut_ptr();
@@ -65,7 +66,7 @@ pub fn schedule(
     cpuid: u32,
     future: impl Future<Output = ()> + 'static + Send,
     priority_level: usize,
-    pid: u32    // 0 as kernel/sentinel
+    pid: u32, // 0 as kernel/sentinel
 ) {
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
@@ -86,7 +87,7 @@ pub fn current_running_event_pid(cpuid: u32) -> u32 {
 
     match runner.current_running_event() {
         Some(e) => e.pid,
-        None => 0
+        None => 0,
     }
 }
 
@@ -96,7 +97,7 @@ pub fn current_running_event_priority(cpuid: u32) -> usize {
 
     match runner.current_running_event() {
         Some(e) => e.priority,
-        None => NUM_EVENT_PRIORITIES-1
+        None => NUM_EVENT_PRIORITIES - 1,
     }
 }
 
@@ -113,11 +114,11 @@ pub fn current_running_event_info(cpuid: u32) -> EventInfo {
     match runner.current_running_event() {
         Some(e) => EventInfo {
             priority: e.priority,
-            pid: e.pid
+            pid: e.pid,
         },
         None => EventInfo {
-            priority: NUM_EVENT_PRIORITIES-1,
-            pid: 0
-        }
+            priority: NUM_EVENT_PRIORITIES - 1,
+            pid: 0,
+        },
     }
 }

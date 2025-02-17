@@ -57,6 +57,9 @@ lazy_static::lazy_static! {
     pub static ref PROCESS_TABLE: ProcessTable = Arc::new(RwLock::new(BTreeMap::new()));
 }
 
+/// # Safety
+///
+/// TODO
 pub unsafe fn print_process_table(process_table: &PROCESS_TABLE) {
     let table = process_table.read();
     serial_println!("\nProcess Table Contents:");
@@ -128,6 +131,9 @@ pub fn create_process(
     pid
 }
 
+/// # Safety
+///
+/// TODO
 pub unsafe fn create_process_page_table(
     kernel_pt: &OffsetPageTable<'static>,
     hhdm_base: VirtAddr,
@@ -155,7 +161,10 @@ pub unsafe fn create_process_page_table(
 use core::arch::asm;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
-// run a process in ring 3
+/// run a process in ring 3
+/// # Safety
+///
+/// TODO
 pub async unsafe fn run_process_ring3(pid: u32) {
     interrupts::disable();
     serial_println!("RUNNING PROCESS");

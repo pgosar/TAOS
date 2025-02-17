@@ -2,12 +2,27 @@ use crate::{
     constants::memory::{FRAME_SIZE, HEAP_SIZE, HEAP_START, MAX_ALLOCATED_FRAMES},
     serial_println,
 };
-use limine::memory_map::EntryType;
-use limine::response::MemoryMapResponse;
+use limine::{
+    memory_map::EntryType,
+    request::{KernelAddressRequest, MemoryMapRequest},
+    response::MemoryMapResponse,
+};
 use x86_64::{
     structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
     PhysAddr,
 };
+
+#[used]
+#[link_section = ".requests"]
+static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
+
+extern "C" {
+    static _kernel_end: u64;
+}
 
 pub struct BootIntoFrameAllocator {
     pub memory_map: &'static MemoryMapResponse,
@@ -21,11 +36,30 @@ pub struct BootIntoFrameAllocator {
 }
 
 impl BootIntoFrameAllocator {
-    pub unsafe fn init(
-        memory_map: &'static MemoryMapResponse,
-        kernel_start: u64,
-        kernel_end: u64,
-    ) -> Self {
+    /// # Safety
+    ///
+    /// TODO
+    pub unsafe fn init() -> Self {
+        let memory_map: &MemoryMapResponse = MEMORY_MAP_REQUEST
+            .get_response()
+            .expect("Memory map request failed");
+        let kernel_address_response = KERNEL_ADDRESS_REQUEST
+            .get_response()
+            .expect("Kernel Address request failed");
+
+        let kernel_start: u64 = kernel_address_response.physical_base();
+        let virtual_kernel_address: u64 = kernel_address_response.virtual_base();
+        serial_println!(
+            "Kernel physical base address: {:#X}, virtual base address: {:#X}",
+            kernel_start,
+            virtual_kernel_address
+        );
+
+        unsafe {
+            serial_println!("virtual kernel end address: {:#X}", _kernel_end);
+        }
+        let kernel_end = unsafe { ((_kernel_end) - virtual_kernel_address) + kernel_start };
+
         BootIntoFrameAllocator {
             memory_map,
             next: 0,

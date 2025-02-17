@@ -293,6 +293,7 @@ dependencies = [
  "goblin",
  "lazy_static",
  "limine",
+ "log",
  "rand",
  "raw-cpuid 11.3.0",
  "spin",
