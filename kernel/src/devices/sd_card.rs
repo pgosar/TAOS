@@ -11,63 +11,101 @@ use x86_64::{
 
 use crate::{
     debug_println,
-    devices::pci::{write_pci_command, COMMAND_BUS_MASTER, COMMAND_MEMORY_SPACE},
+    devices::pci::write_pci_command,
     filesys::{BlockDevice, FsError},
     memory::paging,
 };
 use bitflags::bitflags;
 
-use super::pci::{read_config, DeviceInfo};
-
+use super::pci::{read_config, DeviceInfo, PCICommand};
+/// Used to get access to the sd card in the system. Multiple SD cards 
+/// are NOT supported
 pub static SD_CARD: Mutex<Option<SDCardInfo>> = Mutex::new(Option::None);
 
 #[derive(Debug, Clone)]
+/// A struct storing data of an sd card that can be recieved without 
+/// booting the card.
+/// 
+/// SDCardInfo still has data like the relative_card_address that can not be
+/// determined until the sd card has somewhat initalized.
 struct SDCardInfoInternal {
-    capabilities: u64,
+    /// The contents of the Capabilties register
+    capabilities: Capabilities,
+    /// The kernel virtual address of the contents of the Base Address Register
     base_address_register: u64,
 }
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+/// Represents an SD Card. Is used by all functions that interface with 
+/// an sd card, and is returned by initalize_sd_card  
 pub struct SDCardInfo {
+    /// Stores data that can be determined without needing to fully initalize 
+    /// the card, most importantly the base address register
     internal_info: SDCardInfoInternal,
+    /// Stores the block size of this sd card
     block_size: usize,
+    /// Stores total blocks of  this sd card
     total_blocks: u64,
+    /// Stores the relative card address. This is used as an argument in some
+    /// sd commands
     reletave_card_address: u32,
 }
 
 #[derive(Debug)]
+/// Represents errors that can occur during SD card operation or initalization
 pub enum SDCardError {
+    /// A command was underway when we tried to send a new command
     CommandInhibited,
+    /// Sending a new command failed because there was an error that needs
+    /// to be handled first
     CommandStoppedDueToError,
+    /// A time out occured when waiting for a response
     SDTimeout,
+    /// The sd cards clock frequency could not be set
     FrequencyUnableToBeSet,
+    /// The sd cards voltage could not be set
     VoltageUnableToBeSet,
+    /// An uncategorized error that could not be better described
     GenericSDError,
 }
 
-/// No support for R2 type responses
 #[allow(dead_code)]
 #[derive(Debug)]
+/// Stores the respones of an SD Command. This is fully determined by the
+/// response type of the command. 
 enum SDCommandResponse {
+    /// Used when no response is published to the response register
     NoResponse,
+    /// Used when the device publishes a 32 bit response to the response 
+    /// register. This also incluces when the response is in the upper 32 bits
+    /// of the register
     Response32Bits(u32),
+    /// Used when the device publishes a 128 bit response to the response register
+    /// The data in here is shifted 8 bits over as the CRC bits are not sent 
+    /// to the response register, but they are present in the Physical 
+    /// Specification, which contains what each bit of the command means.
     Response128Bits(u128),
 }
 
 #[allow(dead_code)]
+/// The types of response that an SD Command Returns. Even if these 
+/// say they return the same response type. One should use the appropate 
+/// response type as this determines which checks get enabled. All response 
+/// types except for R0 and R2 return a 32 bit response.
 enum SDResponseTypes {
+    /// Responds as NoRespone
     R0,
+    /// Responds as Response128Bits
+    R2,
     R1,
     R1b,
-    R2,
     R3,
     R4,
     R5,
     R5b,
     R6,
     R7,
-    NoResponse,
 }
 
 bitflags! {
@@ -83,6 +121,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     struct Capabilities: u64 {
         const VDD2SSupported = 1 << 60;
         const ADMA3Supported = 1 << 59;
@@ -102,11 +141,11 @@ bitflags! {
         const Voltage3_3Support = 1 << 24;
         const SuspendSupport = 1 << 23;
         const SDMASupport = 1 << 22;
-        // Allows SD clock frequency to go from 25MHZ to 50MHz
+        /// Allows SD clock frequency to go from 25MHZ to 50MHz
         const HighSpeedSupport = 1 << 21;
         const ADMA2Support = 1 << 19;
         const Embedded8bitSupport = 1 << 18;
-        // If not set uses Kkz to set timeout
+        /// If not set uses Kkz to set timeout
         const TimeoutClockMhz = 1 << 7;
         const _ = !0;
     }
@@ -228,13 +267,11 @@ pub fn initalize_sd_card(
     // Disable Commands from being sent over the Memory Space
     let sd_lock = sd_arc.clone();
     let sd_card = sd_lock.lock();
-    let command = sd_card.command & !(COMMAND_MEMORY_SPACE);
-    unsafe {
-        write_pci_command(sd_card.bus, sd_card.device, 0, command);
-    }
+    let command = sd_card.command & !PCICommand::MEMORY_SPACE;
+    write_pci_command(sd_card.bus, sd_card.device, 0, command);
 
     // Determine the Base Address, and setup a mapping
-    let base_address_register = unsafe { read_config(sd_card.bus, sd_card.device, 0, 0x10) };
+    let base_address_register = read_config(sd_card.bus, sd_card.device, 0, 0x10);
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
     let offset = mapper.phys_offset().as_u64();
     let offset_bar = bar_address + offset;
@@ -293,20 +330,18 @@ pub fn initalize_sd_card(
         }
     }
     // Re-enable memory space commands
-    unsafe {
-        write_pci_command(
-            sd_card.bus,
-            sd_card.device,
-            0,
-            sd_card.command | COMMAND_MEMORY_SPACE | COMMAND_BUS_MASTER,
-        );
-    }
+    write_pci_command(
+        sd_card.bus,
+        sd_card.device,
+        0,
+        sd_card.command | PCICommand::MEMORY_SPACE | PCICommand::BUS_MASTER,
+    );
     // Store capabilities in capabilties register
     let capablities = unsafe { core::ptr::read_volatile((offset_bar + 0x40) as *const u64) };
 
     // Construct the stuct that we will use for further communication
     let info = SDCardInfoInternal {
-        capabilities: capablities,
+        capabilities: Capabilities::from_bits_retain(capablities),
         base_address_register: offset_bar,
     };
 
@@ -337,6 +372,9 @@ fn software_reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardErro
     Result::Ok(())
 }
 
+/// Enables most interrupts of the sd card
+/// 
+/// Curently we do not have an interrupt handler set up
 fn enable_sd_card_interrupts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let normal_intr_status_addr = (sd_card.base_address_register + 0x34) as *mut u16;
     unsafe { core::ptr::write_volatile(normal_intr_status_addr, 0x1FF) };
@@ -353,6 +391,8 @@ fn enable_sd_card_interrupts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardE
     Result::Ok(())
 }
 
+/// Determines what voltages the sd card supports, and enables power
+/// to the sd card
 fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let power_control_addr = (sd_card.base_address_register + 0x29) as *mut u8;
     // Turn off power so we can change the voltage
@@ -360,15 +400,15 @@ fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     // Use maximum voltage that capabiltieis shows
     let mut power_control;
     if Capabilities::Voltage3_3Support
-        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+        .intersects(sd_card.capabilities)
     {
         power_control = 0b111 << 1;
     } else if Capabilities::Voltage1_8Support
-        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+        .intersects(sd_card.capabilities)
     {
         power_control = 0b101 << 1;
     } else if Capabilities::Voltage3_0Support
-        .intersects(Capabilities::from_bits_retain(sd_card.capabilities))
+        .intersects(sd_card.capabilities)
     {
         power_control = 0b110 << 1;
     } else {
@@ -380,6 +420,7 @@ fn power_on_sd_card(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     Result::Ok(())
 }
 
+/// Determines the sd clock divisor to set, and turns the clock on
 fn set_sd_clock(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let clock_ctrl_reg_addr = (sd_card.base_address_register + 0x2c) as *mut u16;
     // Disable sd_clock so we can change it
@@ -417,6 +458,7 @@ fn set_sd_clock(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     Result::Ok(())
 }
 
+/// Sets up the timeouts on the sd card to be sent after the most time has passed
 fn enable_timeouts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let timeout_addr = (sd_card.base_address_register + 0x2e) as *mut u8;
     unsafe { core::ptr::write_volatile(timeout_addr, 0b1110) };
@@ -424,6 +466,8 @@ fn enable_timeouts(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     Result::Ok(())
 }
 
+
+/// Resets and initallizes an sd card using only sd card commands
 fn send_sd_reset_commands(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SDCardError> {
     // Send cmd 0
     let mut result = Result::Err(SDCardError::GenericSDError);
@@ -494,6 +538,7 @@ fn send_sd_reset_commands(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SD
     result
 }
 
+/// Creates an SDCardInfo from the provided data
 fn get_full_sd_card_info(
     sd_card: &SDCardInfoInternal,
     rca: u32,
@@ -521,6 +566,8 @@ fn get_full_sd_card_info(
     Result::Ok(info)
 }
 
+/// Preforms the steps to reset and initalize an sd card, returning the completed
+/// struct
 fn reset_sd_card(sd_card: &SDCardInfoInternal) -> Result<SDCardInfo, SDCardError> {
     software_reset_sd_card(sd_card)?;
     enable_sd_card_interrupts(sd_card)?;
@@ -550,6 +597,7 @@ fn sending_command_valid(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError
     Result::Ok(())
 }
 
+/// Asserts that there are no errors in the error state register
 fn check_no_errors(sd_card: &SDCardInfoInternal) -> Result<(), SDCardError> {
     let error_state_intr_addr = (sd_card.base_address_register + 0x32) as *const u16;
     let error_state = unsafe { core::ptr::read_volatile(error_state_intr_addr) };
@@ -615,6 +663,7 @@ fn send_sd_command(
     Result::Err(SDCardError::SDTimeout)
 }
 
+/// Returns the data in the SD Cards response register
 fn determine_sd_card_response(
     sd_card: &SDCardInfoInternal,
     respone_type: SDResponseTypes,
@@ -656,7 +705,8 @@ fn determine_sd_card_response(
     }
 }
 
-/// Reads data from a sd card
+/// Reads data from a sd card, returning it as  a return value unless an Error 
+/// Occurred
 pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCardError> {
     let internal_info = &sd_card.internal_info;
     let block_size_register_addr = (internal_info.base_address_register + 0x4) as *mut u16;
@@ -709,6 +759,7 @@ pub fn read_sd_card(sd_card: &SDCardInfo, block: u32) -> Result<[u8; 512], SDCar
     Result::Ok(new_data)
 }
 
+/// Writes data to block of sd card
 pub fn write_sd_card(sd_card: &SDCardInfo, block: u32, data: [u8; 512]) -> Result<(), SDCardError> {
     let internal_info = &sd_card.internal_info;
     let block_size_register_addr = (internal_info.base_address_register + 0x4) as *mut u16;

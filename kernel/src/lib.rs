@@ -6,6 +6,7 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+//! The TAOS operating system
 extern crate alloc;
 
 use x86_64::instructions::hlt;
