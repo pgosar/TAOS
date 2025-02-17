@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use x86_64::{
     structures::paging::{Mapper, OffsetPageTable, Page, PageTable, Size4KiB},
     VirtAddr,
@@ -5,6 +6,15 @@ use x86_64::{
 
 use crate::memory::frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR};
 use limine::request::HhdmRequest;
+
+lazy_static! {
+    pub static ref HHDM_OFFSET: u64 = {
+        let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
+
+        hhdm_response.offset()
+    };
+}
+
 
 #[used]
 #[link_section = ".requests"]
@@ -16,9 +26,7 @@ static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 ///
 /// TODO
 pub unsafe fn init() -> OffsetPageTable<'static> {
-    let hhdm_response = HHDM_REQUEST.get_response().expect("HHDM request failed");
-
-    let hhdm_base: VirtAddr = VirtAddr::new(hhdm_response.offset());
+    let hhdm_base: VirtAddr = VirtAddr::new(*HHDM_OFFSET);
 
     let pml4 = active_level_4_table(hhdm_base);
 
