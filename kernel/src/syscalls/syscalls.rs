@@ -10,7 +10,6 @@ use crate::interrupts::x2apic;
 
 #[no_mangle]
 extern "C" fn dispatch_syscall() {
-    //panic!("dispatch syscall");
     let syscall_num: u32;
     unsafe {
         core::arch::asm!("mov {0:r}, rbx", out(reg) syscall_num);
@@ -24,6 +23,7 @@ extern "C" fn dispatch_syscall() {
 
 fn sys_exit() {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
+    // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
 
@@ -47,9 +47,6 @@ fn sys_exit() {
 
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
-
-    //let (mut process_mapper, process_pml4_frame) =
-    //    unsafe { create_process_page_table(kernel_mapper, hhdm_offset) };
 
     unsafe {
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
