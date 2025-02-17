@@ -5,19 +5,13 @@
 #![reexport_test_harness_main = "test_main"]
 
 use limine::request::{RequestsEndMarker, RequestsStartMarker};
-use taos::{
-    constants::processes::BINARY,
-    events::{run_loop, schedule},
-    memory::paging::HHDM_REQUEST,
-};
+use taos::events::run_loop;
 
 extern crate alloc;
 use taos::{
     debug,
-    processes::process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
     serial_println,
 };
-use x86_64::VirtAddr;
 
 #[used]
 #[link_section = ".requests_start_marker"]

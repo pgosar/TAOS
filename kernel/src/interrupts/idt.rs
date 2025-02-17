@@ -8,7 +8,7 @@ use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
 use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
 use crate::processes::registers::Registers;
-use crate::{prelude::*, push_registers};
+use crate::prelude::*;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -99,33 +99,34 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
-    push_registers!();
+    let rsp: usize;
+    unsafe {
+        core::arch::asm!(
+            "mov {}, rsp",
+            out(reg) rsp
+        );
+    }
 
     let mut regs = unsafe {
-        let rsp_after: usize;
-        core::arch::asm!(
-        "mov {}, rsp",
-        out(reg) rsp_after);
-
         // RSP, RIP, and RFLAGS are saved by the interrupt stack frame
         //num registers 15
-        let stack_ptr = (rsp_after as *const u64).byte_offset(-472);
+        let stack_ptr = (rsp as *const u64).byte_offset(1392);
         Registers {
-            rax: *stack_ptr.add(14),
-            rbx: *stack_ptr.add(13),
-            rcx: *stack_ptr.add(12),
-            rdx: *stack_ptr.add(11),
-            rsi: *stack_ptr.add(10),
-            rdi: *stack_ptr.add(9),
-            r8: *stack_ptr.add(8),
+            rax: *stack_ptr.add(0),
+            rbx: *stack_ptr.add(1),
+            rcx: *stack_ptr.add(2),
+            rdx: *stack_ptr.add(3),
+            rsi: *stack_ptr.add(4),
+            rdi: *stack_ptr.add(5),
+            r8: *stack_ptr.add(6),
             r9: *stack_ptr.add(7),
-            r10: *stack_ptr.add(6),
-            r11: *stack_ptr.add(5),
-            r12: *stack_ptr.add(4),
-            r13: *stack_ptr.add(3),
-            r14: *stack_ptr.add(2),
-            r15: *stack_ptr.add(1),
-            rbp: *stack_ptr.add(0),
+            r10: *stack_ptr.add(8),
+            r11: *stack_ptr.add(9),
+            r12: *stack_ptr.add(10),
+            r13: *stack_ptr.add(11),
+            r14: *stack_ptr.add(12),
+            r15: *stack_ptr.add(13),
+            rbp: *stack_ptr.add(14),
             // saved from interrupt stack frame
             rsp: 0,
             rip: 0,
