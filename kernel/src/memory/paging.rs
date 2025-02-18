@@ -1,8 +1,7 @@
 use x86_64::{
-    structures::paging::{
+    instructions::tlb, structures::paging::{
         Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
-    },
-    VirtAddr,
+    }, VirtAddr
 };
 
 use crate::{
@@ -100,11 +99,17 @@ pub fn update_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>, frame: Phy
 }
 
 pub fn remove_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
-    let (frame, flush) = mapper.unmap(page).expect("map_to failed");
-    dealloc_frame(frame);
-    flush.flush();
+    let _ = mapper.unmap(page).expect("map_to failed");
+    tlb_shootdown(page.start_address());
 }
 
+pub fn remove_mapped_frame(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
+    let (frame, _)  = mapper.unmap(page).expect("map_to failed");
+    dealloc_frame(frame);
+    tlb_shootdown(page.start_address());
+}
+
+//update permissions for a specific page
 pub fn map_kernel_frame(
     mapper: &mut impl Mapper<Size4KiB>,
     frame: PhysFrame,
