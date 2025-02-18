@@ -1,4 +1,4 @@
-override STORAGE_NAME := storage
+override STORAGE_NAME := storage_test
 
 .PHONY: check
 check:
@@ -42,4 +42,5 @@ blank_drive:
 
 .PHONY: clean
 clean:
+	@cd kernel && rm $(STORAGE_NAME).img
 	@cd kernel && cargo clean

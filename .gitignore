@@ -2,7 +2,7 @@
 /ovmf
 *.iso
 *.hdd
-storage.img
+*.img
 *.txt
 
 *zig*

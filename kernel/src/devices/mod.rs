@@ -51,5 +51,6 @@ pub fn init(cpu_id: u32) {
             find_sd_card(&devices).expect("Build system currently sets up an sd-card");
         let mut mapper = MAPPER.lock();
         initalize_sd_card(&sd_card_device, &mut mapper).unwrap();
+        serial_println!("Sd card initalized");
     }
 }
