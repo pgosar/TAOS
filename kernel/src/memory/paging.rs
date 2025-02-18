@@ -135,9 +135,9 @@ pub fn clear_process_frames(pml4_frame: PhysFrame<Size4KiB>) {
    let mapper = unsafe{
     OffsetPageTable::new(&mut *pml4_ptr, *HHDM_OFFSET)
     };
-    for (i, entry) in mapper.level_4_table().iter().enumerate() {
-        serial_println!("{:?}", entry);
-    }
+    // for (i, entry) in mapper.level_4_table().iter().enumerate() {
+    //     serial_println!("{:?}", entry);
+    // }
 
     // clear empty p1-p3 tables
     // if let Some(ref mut deallocator) = *allocator_lock {
