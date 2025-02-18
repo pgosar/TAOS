@@ -4,6 +4,12 @@ use alloc::{
     sync::Arc,
 };
 use spin::{mutex::Mutex, rwlock::RwLock};
+use alloc::collections::btree_map::BTreeMap;
+use alloc::sync::Arc;
+use alloc::{boxed::Box, collections::btree_set::BTreeSet};
+use log::debug;
+use spin::mutex::Mutex;
+use spin::rwlock::RwLock;
 
 use core::{
     future::Future,
@@ -14,6 +20,7 @@ use core::{
 use crossbeam_queue::SegQueue;
 
 use crate::constants::events::NUM_EVENT_PRIORITIES;
+use crate::interrupts::x2apic::current_core_id;
 use crate::serial_println;
 
 mod event;
@@ -65,6 +72,7 @@ pub unsafe fn run_loop(cpuid: u32) -> ! {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").as_mut_ptr();
 
+
     (*runner).run_loop()
 }
 
@@ -76,6 +84,8 @@ pub fn schedule(
 ) {
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
+    serial_println!("Scheduled a task on core {}", cpuid);
 
     runner.schedule(future, priority_level, pid);
 }

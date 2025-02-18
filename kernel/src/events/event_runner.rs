@@ -2,6 +2,7 @@ use super::{Event, EventRunner};
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use futures::task::waker_ref;
+use log::debug;
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
 
@@ -12,7 +13,7 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::{constants::events::NUM_EVENT_PRIORITIES, serial_println};
+use crate::{constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
@@ -51,12 +52,16 @@ impl EventRunner {
                     }
                 }
 
+                let core = current_core_id();
+
                 self.current_event = self.next_event();
 
                 let event = self
                     .current_event
                     .as_ref()
                     .expect("Have pending events, but empty waiting queues.");
+
+                debug!("have an event? {}", event.priority);
 
                 let pe_read_lock = self.pending_events.read();
                 if pe_read_lock.contains(&event.eid.0) {
