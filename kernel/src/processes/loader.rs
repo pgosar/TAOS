@@ -73,7 +73,7 @@ pub fn load_elf(
                 page.start_address()
                     .as_u64()
                     .saturating_sub(start_page.start_address().as_u64()) as usize;
-            let page_remaining = PAGE_SIZE as usize - (page_offset % PAGE_SIZE as usize);
+            let page_remaining = PAGE_SIZE - (page_offset % PAGE_SIZE);
             let to_copy = core::cmp::min(file_size.saturating_sub(page_offset), page_remaining);
 
             if to_copy > 0 {

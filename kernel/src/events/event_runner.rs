@@ -62,7 +62,7 @@ impl EventRunner {
                 let pe_read_lock = self.pending_events.read();
                 if pe_read_lock.contains(&event.eid.0) {
                     drop(pe_read_lock);
-                    let waker = waker_ref(&event);
+                    let waker = waker_ref(event);
                     let mut context: Context<'_> = Context::from_waker(&waker);
 
                     let mut future_guard = event.future.lock();

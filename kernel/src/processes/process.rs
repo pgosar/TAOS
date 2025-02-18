@@ -11,10 +11,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
-use x86_64::{
-    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
-    VirtAddr,
-};
+use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 
 // process counter must be thread-safe
 // PID 0 will ONLY be used for errors/PID not found
