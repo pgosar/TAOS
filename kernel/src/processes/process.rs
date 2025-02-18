@@ -187,15 +187,14 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     unsafe {
         asm!(
             "clc",
+            "push rax",
             "jmp 2f",
             "4:",
 
             "mov [{pcb_pc}], rax",
             "mov rax, rsp",
-            // "add rax, 8",
             "mov [{pcb_rsp}], rax",
-
-            "mov rax, 255",
+            "pop rax",
 
             // Needed for cross-privilege iretq
             "push {ss}",
@@ -211,11 +210,10 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "2:",
             "call 3f",
             "3:",
-            "jb 5f",
             "pop rax",
+            "jb 5f",
             "jae 4b",
             "5:",
-            "cli",
 
             ss = in(reg) user_ds,
             userrsp = in(reg) registers.rsp,
@@ -232,5 +230,5 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // rust compiler generates this by default
     // The address of this will be program counter from the iretq instruction in the load registers macro
     // return Poll::Ready(())
-    serial_println!("Returned from process")
+    serial_println!("Returned from process");
 }
