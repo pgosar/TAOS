@@ -9,11 +9,11 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
+use crate::memory::paging;
 use crate::{
     debug_println,
     devices::pci::write_pci_command,
     filesys::{BlockDevice, FsError},
-    memory::paging,
 };
 use bitflags::bitflags;
 
@@ -274,7 +274,7 @@ pub fn initalize_sd_card(
     let base_address_register = read_config(sd_card.bus, sd_card.device, 0, 0x10);
     let bar_address: u64 = (base_address_register & 0xFFFFFF00).into();
     let offset = mapper.phys_offset().as_u64();
-    let offset_bar = bar_address + offset;
+    let mut offset_bar = bar_address + offset;
     let translate_result = mapper.translate(VirtAddr::new(offset_bar));
     match translate_result {
         TranslateResult::Mapped {
@@ -323,10 +323,14 @@ pub fn initalize_sd_card(
             panic!("Invalid physical address in SD BAR")
         }
         TranslateResult::NotMapped => {
-            let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(offset_bar));
             let bar_frame: PhysFrame<Size4KiB> =
                 PhysFrame::containing_address(PhysAddr::new(bar_address));
-            paging::create_uncachable_mapping(page, bar_frame, mapper);
+            let sd_va = paging::map_kernel_frame(
+                mapper,
+                bar_frame,
+                PageTableFlags::PRESENT | PageTableFlags::NO_CACHE | PageTableFlags::WRITABLE,
+            );
+            offset_bar = sd_va.as_u64();
         }
     }
     // Re-enable memory space commands

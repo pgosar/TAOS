@@ -7,7 +7,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const FRAME_SIZE: usize = 4096;
 
 /// Starting virtual address of the kernel heap.
-pub const HEAP_START: *mut u8 = 0x_0000_4444_4444_0000 as *mut u8;
+pub const HEAP_START: *mut u8 = 0x_FFFF_FFFF_0000_0000 as *mut u8;
 
 /// Initial size of the kernel heap (1 MB).
 pub const HEAP_SIZE: usize = 1024 * 1024;
@@ -21,3 +21,5 @@ pub const BITMAP_ENTRY_SIZE: usize = 64;
 
 /// Value representing a fully allocated bitmap entry.
 pub const FULL_BITMAP_ENTRY: u64 = 0xFFFFFFFFFFFFFFFF;
+
+pub const EPHEMERAL_KERNEL_MAPPINGS_START: u64 = 0xFFFF_FF80_0000_0000;

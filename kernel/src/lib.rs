@@ -19,6 +19,8 @@ pub mod init;
 pub mod interrupts;
 pub mod logging;
 pub mod memory;
+pub mod processes;
+pub mod syscalls;
 
 pub use devices::serial;
 
