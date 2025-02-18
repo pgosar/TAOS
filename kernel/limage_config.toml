@@ -20,7 +20,7 @@ base_args = [
     "-device", "hda-duplex",
 
     # General Storage
-    "-drive", "id=mysdcard,file=../storage.img,if=none,format=raw",
+    "-drive", "id=mysdcard,file=storage.img,if=none,format=raw",
     "-device", "sdhci-pci",
     "-device", "sd-card,drive=mysdcard", 
 
