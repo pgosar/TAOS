@@ -12,7 +12,7 @@ use crate::interrupts::x2apic;
 extern "C" fn dispatch_syscall() {
     let syscall_num: u32;
     unsafe {
-        core::arch::asm!("mov {0:r}, rbx", out(reg) syscall_num);
+        core::arch::asm!("mov {0:r}, rax", out(reg) syscall_num);
     }
 
     match syscall_num {
