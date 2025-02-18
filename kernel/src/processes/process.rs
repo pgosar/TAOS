@@ -230,7 +230,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     }
 
     // rust compiler generates this by default
-    // The address of this will be program counter + 4 from the iretq instruction in the load registers macro
+    // The address of this will be program counter from the iretq instruction in the load registers macro
     // return Poll::Ready(())
     serial_println!("Returned from process")
 }
