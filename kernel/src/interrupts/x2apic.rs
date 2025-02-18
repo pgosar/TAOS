@@ -17,6 +17,7 @@ use crate::constants::MAX_CORES;
 use crate::serial_println;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use raw_cpuid::CpuId;
+use spin::Mutex;
 use x86_64::instructions::port::Port;
 use x86_64::registers::model_specific::Msr;
 // MSR register constants
@@ -37,10 +38,7 @@ const CHANNEL_2_PORT: u16 = 0x42;
 const COMMAND_PORT: u16 = 0x43;
 const CONTROL_PORT: u16 = 0x61;
 
-pub static TLB_SHOOTDOWN_ADDR: [AtomicU64; MAX_CORES] = [
-    AtomicU64::new(0),
-    AtomicU64::new(0)
-];
+pub static TLB_SHOOTDOWN_ADDR: Mutex<[u64; MAX_CORES]> = Mutex::new([0; MAX_CORES]);
 
 #[derive(Debug)]
 pub enum X2ApicError {

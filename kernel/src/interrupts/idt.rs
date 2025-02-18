@@ -278,11 +278,14 @@ fn timer_handler(rsp: u64) {
 extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
     debug!("tlb shootdown handler");
     let core = current_core_id();
-    let vaddr_to_invalidate = TLB_SHOOTDOWN_ADDR[core].load(Ordering::SeqCst);
-    if vaddr_to_invalidate != 0 {
-        unsafe {
-            core::arch::asm!("invlpg [{}]", in (reg) vaddr_to_invalidate, options(nostack, preserves_flags));
+    {
+        let mut addresses = TLB_SHOOTDOWN_ADDR.lock();
+        let vaddr_to_invalidate = addresses[core];
+        if vaddr_to_invalidate != 0 {
+            unsafe {
+                core::arch::asm!("invlpg [{}]", in (reg) vaddr_to_invalidate, options(nostack, preserves_flags));
+            }
+            addresses[core] = 0;
         }
-        TLB_SHOOTDOWN_ADDR[core].store(0, Ordering::SeqCst);
     }
 }

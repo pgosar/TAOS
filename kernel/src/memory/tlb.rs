@@ -1,4 +1,4 @@
-use core::{arch::asm, sync::atomic::Ordering};
+use core::arch::asm;
 
 use x86_64::VirtAddr;
 
@@ -9,12 +9,15 @@ use crate::{
 
 pub fn tlb_shootdown(target_vaddr: VirtAddr) {
     let current_core = current_core_id();
-
     let vaddr = target_vaddr.as_u64();
 
-    for core in 0..MAX_CORES {
-        if core != current_core {
-            TLB_SHOOTDOWN_ADDR[core].store(vaddr, Ordering::SeqCst);
+    {
+        // Acquire the lock and update all cores except the current one.
+        let mut addresses = TLB_SHOOTDOWN_ADDR.lock();
+        for core in 0..MAX_CORES {
+            if core != current_core {
+                addresses[core] = vaddr;
+            }
         }
     }
 
