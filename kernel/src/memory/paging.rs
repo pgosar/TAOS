@@ -1,16 +1,19 @@
 use lazy_static::lazy_static;
 use x86_64::{
     structures::paging::{
-        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+        mapper::CleanUp, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable,
+        PageTableFlags, PhysFrame, Size4KiB,
     },
     VirtAddr,
 };
 
-use crate::constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START;
+use crate::{constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START, serial_println};
 use crate::memory::{
     frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
     HHDM_OFFSET,
 };
+
+use super::bitmap_frame_allocator::BitmapFrameAllocator;
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
@@ -121,4 +124,30 @@ pub unsafe fn update_permissions(
         .expect("Updating flags failed")
         .flush();
     // TODO: Deal with TLB Shootdowns
+}
+
+pub fn clear_process_frames(pml4_frame: PhysFrame<Size4KiB>) {
+    let mut allocator_lock = FRAME_ALLOCATOR.lock();
+
+    let phys_addr = pml4_frame.start_address();
+    let virt_addr = *HHDM_OFFSET + phys_addr.as_u64();
+    let pml4_ptr: *mut PageTable = virt_addr.as_mut_ptr();
+   let mapper = unsafe{
+    OffsetPageTable::new(&mut *pml4_ptr, *HHDM_OFFSET)
+    };
+    for (i, entry) in mapper.level_4_table().iter().enumerate() {
+        serial_println!("{:?}", entry);
+    }
+
+    // clear empty p1-p3 tables
+    // if let Some(ref mut deallocator) = *allocator_lock {
+    //     unsafe {
+    //         mapper.clean_up(deallocator);
+    //     }
+    // }
+
+    
+
+    // let m = *mapper;
+    // m.clean_up(deallocator);
 }

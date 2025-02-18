@@ -14,6 +14,9 @@ use crate::{
     events::{register_event_runner, run_loop},
     interrupts::{self, idt},
     logging, memory, trace,
+    processes::process::{create_process, run_process_ring3},
+    events::schedule,
+    constants::processes::BINARY,
 };
 
 extern crate alloc;

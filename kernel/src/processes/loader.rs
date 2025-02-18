@@ -100,6 +100,11 @@ pub fn load_elf(
             unsafe {
                 update_permissions(page, user_mapper, flags);
             }
+ 
+            let unmap_page: Page<Size4KiB> = Page::containing_address(kernel_alias);
+            // unmap the frame, but do not actually deallocate it
+            // the physical frame is still used by the process in its own mapping
+            kernel_mapper.unmap(unmap_page).expect("Unmapping kernel frame failed").1.flush();
         }
 
         serial_println!("Segment {} loaded successfully.", i);
