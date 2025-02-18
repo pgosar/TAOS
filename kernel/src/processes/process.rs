@@ -46,6 +46,7 @@ impl UnsafePCB {
         }
     }
 }
+
 unsafe impl Sync for UnsafePCB {}
 type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<UnsafePCB>>>>;
 
@@ -53,6 +54,17 @@ type ProcessTable = Arc<RwLock<BTreeMap<u32, Arc<UnsafePCB>>>>;
 lazy_static::lazy_static! {
     #[derive(Debug)]
     pub static ref PROCESS_TABLE: ProcessTable = Arc::new(RwLock::new(BTreeMap::new()));
+}
+
+impl PCB {
+    /// Creates a page table mapper for temporary use during only process creation and cleanup
+    /// # Safety
+    /// TODO
+    pub unsafe fn create_mapper(&mut self) -> OffsetPageTable<'_> {
+        let virt = *HHDM_OFFSET + self.pml4_frame.start_address().as_u64();
+        let ptr = virt.as_mut_ptr::<PageTable>();
+        OffsetPageTable::new(unsafe { &mut *ptr }, *HHDM_OFFSET)
+    }
 }
 
 /// # Safety
@@ -86,9 +98,13 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
     let pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
 
     // Build a new process address space
-    let (mut process_mapper, process_pml4_frame) = unsafe { create_process_page_table() };
-
-    let (stack_top, entry_point) = load_elf(elf_bytes, &mut process_mapper, &mut MAPPER.lock());
+    let process_pml4_frame = unsafe { create_process_page_table() };
+    let mut mapper = unsafe {
+        let virt = *HHDM_OFFSET + process_pml4_frame.start_address().as_u64();
+        let ptr = virt.as_mut_ptr::<PageTable>();
+        OffsetPageTable::new(&mut *ptr, *HHDM_OFFSET)
+    };
+    let (stack_top, entry_point) = load_elf(elf_bytes, &mut mapper, &mut MAPPER.lock());
 
     let process = Arc::new(UnsafePCB::init(PCB {
         pid,
@@ -127,26 +143,22 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
 /// # Safety
 ///
 /// TODO
-pub unsafe fn create_process_page_table() -> (OffsetPageTable<'static>, PhysFrame<Size4KiB>) {
-    let new_pml4_frame = alloc_frame().expect("failed to allocate frame for process PML4");
-    let new_pml4_phys = new_pml4_frame.start_address();
-    let new_pml4_virt = *HHDM_OFFSET + new_pml4_phys.as_u64();
-    let new_pml4_ptr: *mut PageTable = new_pml4_virt.as_mut_ptr();
+unsafe fn create_process_page_table() -> PhysFrame<Size4KiB> {
+    let frame = alloc_frame().expect("Failed to allocate PML4 frame");
+    let virt = *HHDM_OFFSET + frame.start_address().as_u64();
+    let ptr = virt.as_mut_ptr::<PageTable>();
 
-    // Need to zero out new page table
-    (*new_pml4_ptr).zero();
-
-    // Copy higher half kernel mappings
+    // Initialize and copy kernel mappings
     let mapper = MAPPER.lock();
-    let kernel_pml4: &PageTable = mapper.level_4_table();
-    for i in 256..512 {
-        (*new_pml4_ptr)[i] = kernel_pml4[i].clone();
+    unsafe {
+        (*ptr).zero();
+        let kernel_pml4 = mapper.level_4_table();
+        for i in 256..512 {
+            (*ptr)[i] = kernel_pml4[i].clone();
+        }
     }
 
-    (
-        OffsetPageTable::new(&mut *new_pml4_ptr, *HHDM_OFFSET),
-        new_pml4_frame,
-    )
+    frame
 }
 
 use core::arch::asm;

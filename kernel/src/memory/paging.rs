@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use x86_64::{
     structures::paging::{
         mapper::CleanUp, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable,
@@ -7,13 +6,17 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START, serial_println};
-use crate::memory::{
-    frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
-    HHDM_OFFSET,
+use crate::{
+    constants::memory::{EPHEMERAL_KERNEL_MAPPINGS_START, HEAP_START},
+    serial_println,
 };
-
-use super::bitmap_frame_allocator::BitmapFrameAllocator;
+use crate::{
+    memory::{
+        frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+        HHDM_OFFSET,
+    },
+    processes::process::PCB,
+};
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
@@ -126,28 +129,61 @@ pub unsafe fn update_permissions(
     // TODO: Deal with TLB Shootdowns
 }
 
-pub fn clear_process_frames(pml4_frame: PhysFrame<Size4KiB>) {
+/// Clear the PML4 associated with the PCB
+///
+/// * `pcb`: The process PCB to clear memory for
+pub fn clear_process_frames(pcb: &mut PCB) {
     let mut allocator_lock = FRAME_ALLOCATOR.lock();
-
-    let phys_addr = pml4_frame.start_address();
-    let virt_addr = *HHDM_OFFSET + phys_addr.as_u64();
-    let pml4_ptr: *mut PageTable = virt_addr.as_mut_ptr();
-   let mapper = unsafe{
-    OffsetPageTable::new(&mut *pml4_ptr, *HHDM_OFFSET)
+    let deallocator = match &mut *allocator_lock {
+        Some(deallocator) => deallocator,
+        None => {
+            panic!("No deallocator found to clear process frames")
+        }
     };
-    // for (i, entry) in mapper.level_4_table().iter().enumerate() {
-    //     serial_println!("{:?}", entry);
-    // }
 
-    // clear empty p1-p3 tables
-    // if let Some(ref mut deallocator) = *allocator_lock {
-    //     unsafe {
-    //         mapper.clean_up(deallocator);
-    //     }
-    // }
+    let pml4_frame = pcb.pml4_frame;
+    let mut mapper = unsafe { pcb.create_mapper() };
 
-    
+    // The first 256 entries are the process mappings in the pml4
+    for i in 0..256 {
+        let addr = mapper.level_4_table()[i].addr();
+        let unused = mapper.level_4_table()[i].is_unused();
+        if unused {
+            continue;
+        }
+        let pdpt_frame = PhysFrame::containing_address(addr);
+        unsafe {
+            free_page_table(pdpt_frame, 3, deallocator, HHDM_OFFSET.as_u64());
+        }
+    }
+    serial_println!("Process memory cleared");
+}
 
-    // let m = *mapper;
-    // m.clean_up(deallocator);
+/// Recursively deallocates a page table
+///
+/// # Safety
+/// TODO
+unsafe fn free_page_table(
+    frame: PhysFrame,
+    level: u8,
+    deallocator: &mut impl FrameDeallocator<Size4KiB>,
+    hhdm_offset: u64,
+) {
+    let virt = hhdm_offset + frame.start_address().as_u64();
+    let table = unsafe { &mut *(virt as *mut PageTable) };
+
+    for entry in table.iter_mut() {
+        if entry.is_unused() {
+            continue;
+        }
+
+        if level > 1 {
+            let child_frame = PhysFrame::containing_address(entry.addr());
+            free_page_table(child_frame, level - 1, deallocator, hhdm_offset);
+        } else {
+            // Free level one page
+            let page_frame = PhysFrame::containing_address(entry.addr());
+            deallocator.deallocate_frame(page_frame);
+        }
+    }
 }
