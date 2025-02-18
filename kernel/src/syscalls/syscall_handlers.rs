@@ -54,6 +54,7 @@ fn sys_exit() {
         drop(allocator_lock);
         (*pcb).state = ProcessState::Terminated;
         clear_process_frames(&mut *pcb);
+        process_table.remove(&event.pid);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 
