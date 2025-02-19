@@ -9,11 +9,11 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::memory::paging;
 use crate::{
     debug_println,
     devices::pci::write_pci_command,
     filesys::{BlockDevice, FsError},
+    memory::paging,
 };
 use bitflags::bitflags;
 

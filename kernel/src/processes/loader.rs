@@ -11,9 +11,8 @@ use goblin::{
     elf::Elf,
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
 };
-use x86_64::structures::paging::OffsetPageTable;
 use x86_64::{
-    structures::paging::{Mapper, Page, PageTableFlags, Size4KiB},
+    structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
