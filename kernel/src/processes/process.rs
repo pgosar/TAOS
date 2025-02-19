@@ -188,8 +188,6 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
-        restore_registers_into_stack!(registers);
-
         asm!(
             "push rax",
             "push rcx",
