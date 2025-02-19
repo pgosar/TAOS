@@ -8,7 +8,9 @@ use crate::{
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
-    arch::naked_asm, cell::UnsafeCell, sync::atomic::{AtomicU32, Ordering}
+    arch::naked_asm,
+    cell::UnsafeCell,
+    sync::atomic::{AtomicU32, Ordering},
 };
 use spin::rwlock::RwLock;
 use x86_64::{
@@ -209,7 +211,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 #[naked]
 #[allow(undefined_naked_function_abi)]
 #[no_mangle]
-// unsafe fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64, 
+// unsafe fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64,
 //                        kernel_rip: *const u64, kernel_rsp: *const u64, return_ins: *fn) {
 unsafe fn call_process() {
     naked_asm!(
@@ -228,28 +230,24 @@ unsafe fn call_process() {
         push rsi
         push rbx
         ",
-
-        "mov [rcx], r9",   // Return RIP in R9, store
-        "mov r11, rsp",    // Move RSP to R11
-        "mov [r8], r11",   // store RSP (from R11)
-
+        "mov [rcx], r9", // Return RIP in R9, store
+        "mov r11, rsp",  // Move RSP to R11
+        "mov [r8], r11", // store RSP (from R11)
         // Needed for cross-privilege iretq
-        "push rsi",        //ss
+        "push rsi", //ss
         "mov rax, [rdi + 120]",
-        "push rax",       //userrsp
+        "push rax", //userrsp
         "mov rax, [rdi + 136]",
-        "push rax",       //rflags
-        "push rdx",     //cs
+        "push rax", //rflags
+        "push rdx", //cs
         "mov rax, [rdi + 128]",
-        "push rax",       //rip
-
+        "push rax", //rip
         // Restore all registers before entering process
         "mov rax, [rdi]",
         "mov rbx, [rdi+8]",
         "mov rcx, [rdi+16]",
         "mov rdx, [rdi+24]",
         "mov rsi, [rdi+32]",
-
         "mov r8,  [rdi+48]",
         "mov r9,  [rdi+56]",
         "mov r10, [rdi+64]",
@@ -259,12 +257,9 @@ unsafe fn call_process() {
         "mov r14, [rdi+96]",
         "mov r15, [rdi+104]",
         "mov rbp, [rdi+112]",
-
         "mov rdi, [rdi+40]",
-
-        "sti",      //enable interrupts
-
-        "iretq",    // call process
+        "sti",   //enable interrupts
+        "iretq", // call process
     );
 }
 
@@ -273,8 +268,8 @@ unsafe fn call_process() {
 #[no_mangle]
 unsafe fn return_process() {
     naked_asm!(
-        "cli",      //disable interrupts
-                    //restore callee-saved registers
+        "cli", //disable interrupts
+        //restore callee-saved registers
         "
         pop rbx
         pop rsi
@@ -289,6 +284,6 @@ unsafe fn return_process() {
         pop r15
         pop rbp
         ",
-        "ret",  // return to event scheduler
+        "ret", // return to event scheduler
     );
 }
