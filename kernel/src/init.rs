@@ -10,14 +10,10 @@ use limine::{
 };
 
 use crate::{
-    constants,
-    constants::processes::BINARY,
     debug, devices,
-    events::{register_event_runner, run_loop, schedule},
-    interrupts::{self, idt, x2apic::X2ApicManager},
-    logging, memory,
-    processes::process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
-    serial_println, trace,
+    events::{register_event_runner, run_loop},
+    interrupts::{self, idt},
+    logging, memory, trace,
 };
 
 extern crate alloc;
@@ -57,13 +53,6 @@ pub fn init() -> u32 {
 
     register_event_runner(bsp_id);
     idt::enable();
-
-    unsafe {
-        serial_println!("Current CPU ID {}", 1);
-        let pid = create_process(BINARY);
-        print_process_table(&PROCESS_TABLE);
-        schedule(1, run_process_ring3(pid), 0, pid)
-    };
 
     bsp_id
 }
@@ -111,19 +100,20 @@ fn wake_cores() -> u32 {
     trace!("Detected {} CPU cores", cpu_count);
 
     // Set entry point for each AP
-    // for cpu in smp_response.cpus() {
-    //     if cpu.id != bsp_id {
-    //         cpu.goto_address.write(secondary_cpu_main);
-    //     }
-    // }
+    for cpu in smp_response.cpus() {
+        if cpu.id != bsp_id {
+            cpu.goto_address.write(secondary_cpu_main);
+        }
+    }
 
-    // // Wait for all APs to initialize
-    // while CPU_COUNT.load(Ordering::SeqCst) < cpu_count - 1 {
-    //     core::hint::spin_loop();
-    // }
+    // Wait for all APs to initialize
+    while CPU_COUNT.load(Ordering::SeqCst) < cpu_count - 1 {
+        core::hint::spin_loop();
+    }
 
     BOOT_COMPLETE.store(true, Ordering::SeqCst);
 
     debug!("All CPUs initialized");
     bsp_id
 }
+

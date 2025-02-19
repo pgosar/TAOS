@@ -10,8 +10,7 @@ use x86_64::{
 };
 
 use crate::{
-    constants::{idt::TLB_SHOOTDOWN_VECTOR, memory::EPHEMERAL_KERNEL_MAPPINGS_START},
-    interrupts::x2apic::X2ApicManager,
+    constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START,
     memory::{
         frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
         tlb::tlb_shootdown,
@@ -25,30 +24,41 @@ static mut NEXT_EPH_OFFSET: u64 = 0;
 ///
 /// # Safety
 ///
-/// TODO
+/// This function is unsafe as the caller must guarantee that HHDM_OFFSET is correct
 pub unsafe fn init() -> OffsetPageTable<'static> {
-    OffsetPageTable::new(active_level_4_table(*HHDM_OFFSET), *HHDM_OFFSET)
+    OffsetPageTable::new(active_level_4_table(), *HHDM_OFFSET)
 }
 
 /// activates pml4
+///
+/// # Returns
+/// * A pointer to a level 4 page table
+///
 /// # Safety
 ///
-/// TODO
-pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
+/// This function is unsafe as the caller must guarantee that HHDM_OFFSET is correct
+pub unsafe fn active_level_4_table() -> &'static mut PageTable {
     use x86_64::registers::control::Cr3;
 
     let (level_4_table_frame, _) = Cr3::read();
 
     let phys = level_4_table_frame.start_address();
-    let virt = physical_memory_offset + phys.as_u64();
+    let virt = *HHDM_OFFSET + phys.as_u64();
     let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
     &mut *page_table_ptr
 }
 
-/// Creates an example mapping, is unsafe
-/// Takes in page, mapper, and nullable flags (default flags)
+/// Creates a mapping
 /// Default flags: PRESENT | WRITABLE
+///
+/// # Arguments
+/// * `page` - a Page that we want to map
+/// * `mapper` - anything that implements a the Mapper trait
+/// * `flags` - Optional flags, can be None
+///
+/// # Returns
+/// Returns the frame that was allocated and mapped to this page
 pub fn create_mapping(
     page: Page,
     mapper: &mut impl Mapper<Size4KiB>,
@@ -57,7 +67,6 @@ pub fn create_mapping(
     let frame = alloc_frame().expect("no more frames");
 
     let _ = unsafe {
-        // FIXME: this is not safe, we do it only for testing
         mapper
             .map_to(
                 page,
@@ -75,21 +84,26 @@ pub fn create_mapping(
             .expect("Mapping failed")
     };
 
-    // tlb_shootdown(page.start_address());
-
     frame
 }
 
-/// updates an existing mapping
+/// Updates an existing mapping
+///
+/// Performs a TLB shootdown if the new frame is different than the old
+///
+/// # Arguments
+/// * `page` - a Page that we want to map, must already be mapped
+/// * `mapper` - anything that implements a the Mapper trait
+/// * `frame` - the PhysFrame<Size4KiB> to map to
 pub fn update_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>, frame: PhysFrame<Size4KiB>) {
     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
-    let old_frame = mapper
-        .translate_page(page)
-        .expect("No mapping currently exists");
+    let (old_frame, _) = mapper
+        .unmap(page)
+        .expect("Unmap failed, frame likely was not mapped already");
 
     if old_frame != frame {
-        let map_to_result = unsafe {
+        let _ = unsafe {
             mapper.map_to(
                 page,
                 frame,
@@ -101,24 +115,50 @@ pub fn update_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>, frame: Phy
             )
         };
 
-        map_to_result.expect("Mapping failed").flush();
-        X2ApicManager::send_ipi_all_cores(TLB_SHOOTDOWN_VECTOR).expect("Failed to flush TLBs");
+        tlb_shootdown(page.start_address());
     }
 }
 
+/// Removes an existing mapping
+///
+/// Performs a TLB Shootdown
+///
+/// # Arguments
+/// * `page` - a Page that we want to map, must already be mapped
+/// * `mapper` - anything that implements a the Mapper trait
+///
+/// # Returns
+/// Returns the frame we unmapped
 pub fn remove_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) -> PhysFrame<Size4KiB> {
-    let (frame, _) = mapper.unmap(page).expect("map_to failed");
+    let (frame, _) = mapper.unmap(page).expect("Unmap failed");
     tlb_shootdown(page.start_address());
     frame
 }
 
+/// Removes an existing mapping and deallocates the frame
+///
+/// Performs a TLB Shootdown
+///
+/// # Arguments
+/// * `page` - a Page that we want to map, must already be mapped
+/// * `mapper` - anything that implements a the Mapper trait
 pub fn remove_mapped_frame(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
     let (frame, _) = mapper.unmap(page).expect("map_to failed");
     dealloc_frame(frame);
     tlb_shootdown(page.start_address());
 }
 
-//update permissions for a specific page
+/// Mappes a frame to kernel pages
+/// Used for loading
+///
+/// # Arguments
+/// * `mapper` - anything that implements a the Mapper trait
+/// * `frame` - A PhysFrame we want to find a kernel mapping for
+///
+/// # Returns
+/// Returns the new virtual address mapped to the inputted frame
+///
+/// TODO Find a better place for this code
 pub fn map_kernel_frame(
     mapper: &mut impl Mapper<Size4KiB>,
     frame: PhysFrame,
@@ -149,14 +189,33 @@ pub fn map_kernel_frame(
     temp_virt
 }
 
+/// Update permissions for a specific page
+///
+/// # Arguments
+/// * `page` - Page to update permissions of
+/// * `mapper` - Anything that implements a the Mapper trait
+/// * `flags` - New permissions
+///
+/// # Safety
+///
+/// TODO
+pub fn update_permissions(page: Page, mapper: &mut impl Mapper<Size4KiB>, flags: PageTableFlags) {
+    let _ = unsafe {
+        mapper
+            .update_flags(page, flags)
+            .expect("Updating flags failed")
+    };
+
+    tlb_shootdown(page.start_address());
+}
+
 /// Returns a reference to the page table entry for the given page.
+/// Needed because x86_64 crate does not expose a method to get PageTableEntry
 ///
 /// # Safety
 ///
 /// The caller must ensure that the provided `mapper` (an OffsetPageTable)
 /// was initialized with the correct physical memory offset.
-///
-/// Needed because x86_64 crate does not expose a method to get PageTableEntry
 unsafe fn get_page_table_entry<'a>(
     page: Page<Size4KiB>,
     mapper: &OffsetPageTable<'a>,
@@ -190,51 +249,37 @@ unsafe fn get_page_table_entry<'a>(
     Some(pte)
 }
 
-///update permissions for a specific page
-/// # Safety
-///
-/// TODO
-pub unsafe fn update_permissions(
-    page: Page,
-    mapper: &mut impl Mapper<Size4KiB>,
-    flags: PageTableFlags,
-) {
-    mapper
-        .update_flags(page, flags)
-        .expect("Updating flags failed")
-        .flush();
-    // TODO: Deal with TLB Shootdowns
-}
-
 #[cfg(test)]
 mod tests {
     use core::{
-        future::Future,
         ptr::{read_volatile, write_volatile},
         sync::atomic::{AtomicU64, Ordering},
     };
 
     use super::*;
     use crate::{
-        constants::{memory::PAGE_SIZE, MAX_CORES},
+        constants::memory::PAGE_SIZE,
         events::schedule,
-        interrupts::x2apic::{current_core_id, TLB_SHOOTDOWN_ADDR},
-        memory::{tlb, MAPPER},
-        serial_print, serial_println,
+        memory::MAPPER,
     };
     use alloc::vec::Vec;
-    use log::debug;
     use x86_64::structures::paging::mapper::TranslateError;
 
     // used for tlb shootdown testcases
     static PRE_READ: AtomicU64 = AtomicU64::new(0);
     static POST_READ: AtomicU64 = AtomicU64::new(0);
 
-    async fn read_future(page: Page) {
+    async fn pre_read(page: Page) {
         let value = unsafe { page.start_address().as_ptr::<u64>().read_volatile() };
         PRE_READ.store(value, Ordering::SeqCst);
     }
 
+    async fn post_read(page: Page) {
+        let value = unsafe { page.start_address().as_ptr::<u64>().read_volatile() };
+        POST_READ.store(value, Ordering::SeqCst);
+    }
+
+    // Test basic remove, as removing and then translating should fail
     #[test_case]
     fn test_remove_mapped_frame() {
         let mut mapper = MAPPER.lock();
@@ -251,187 +296,130 @@ mod tests {
         ));
     }
 
-//     #[test_case]
-//     fn test_basic_map_and_translate() -> impl Future<Output = ()> + Send + 'static {
-//         async move {
-//             let mut mapper = MAPPER.lock();
+    // Test basic translation after map returns correct frame
+    #[test_case]
+    fn test_basic_map_and_translate() {
+        let mut mapper = MAPPER.lock();
 
-//             // random test virtual page
-//             let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
-//             let frame: PhysFrame = create_mapping(page, &mut *mapper, None);
+        // random test virtual page
+        let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
+        let frame: PhysFrame = create_mapping(page, &mut *mapper, None);
 
-//             let translate_frame = mapper.translate_page(page).expect("Translation failed");
+        let translate_frame = mapper.translate_page(page).expect("Translation failed");
 
-//             assert_eq!(frame, translate_frame);
+        assert_eq!(frame, translate_frame);
 
-//             remove_mapped_frame(page, &mut *mapper);
-//         }
-//     }
+        remove_mapped_frame(page, &mut *mapper);
+    }
 
-//     // #[test_case]
-//     fn test_update_permissions() -> impl Future<Output = ()> + Send + 'static {
-//         async move {
-//             let mut mapper = MAPPER.lock();
+    // Test that permissions are updated correctly
+    #[test_case]
+    fn test_update_permissions() {
+        let mut mapper = MAPPER.lock();
 
-//             let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
-//             let _ = create_mapping(page, &mut *mapper, None);
+        let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
+        let _ = create_mapping(page, &mut *mapper, None);
 
-//             let flags = PageTableFlags::PRESENT;
+        let flags = PageTableFlags::PRESENT;
 
-//             unsafe { update_permissions(page, &mut *mapper, flags) };
+        update_permissions(page, &mut *mapper, flags);
 
-//             let pte =
-//                 unsafe { get_page_table_entry(page, &mut *mapper) }.expect("Getting PTE Failed");
+        let pte = unsafe { get_page_table_entry(page, &mut *mapper) }.expect("Getting PTE Failed");
 
-//             assert!(pte.flags().contains(PageTableFlags::PRESENT));
-//             assert!(!pte.flags().contains(PageTableFlags::WRITABLE));
+        assert!(pte.flags().contains(PageTableFlags::PRESENT));
+        assert!(!pte.flags().contains(PageTableFlags::WRITABLE));
 
-//             remove_mapped_frame(page, &mut *mapper);
-//         }
-//     }
+        remove_mapped_frame(page, &mut *mapper);
+    }
 
-//     // #[test_case]
-//     fn test_contiguous_mapping() -> impl Future<Output = ()> + Send + 'static {
-//         async move {
-//             let mut mapper = MAPPER.lock();
+    // Test that contiguous mappings work correctly. Allocates 8 pages in a row.
+    #[test_case]
+    fn test_contiguous_mapping() {
+        let mut mapper = MAPPER.lock();
 
-//             // Define a contiguous region spanning 8 pages.
-//             let start_page: Page = Page::containing_address(VirtAddr::new(0x500000000));
-//             let num_pages = 8;
-//             let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        // Define a contiguous region spanning 8 pages.
+        let start_page: Page = Page::containing_address(VirtAddr::new(0x500000000));
+        let num_pages = 8;
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
-//             let mut frames = Vec::new();
-//             for i in 0..num_pages {
-//                 let page =
-//                     Page::from_start_address(start_page.start_address() + i * PAGE_SIZE as u64)
-//                         .expect("Invalid page address");
-//                 let frame = create_mapping(page, &mut *mapper, Some(flags));
-//                 frames.push((page, frame));
-//             }
+        let mut frames = Vec::new();
+        for i in 0..num_pages {
+            let page = Page::from_start_address(start_page.start_address() + i * PAGE_SIZE as u64)
+                .expect("Invalid page address");
+            let frame = create_mapping(page, &mut *mapper, Some(flags));
+            frames.push((page, frame));
+        }
 
-//             // Write and verify distinct values.
-//             for (i, (page, _)) in frames.iter().enumerate() {
-//                 let ptr = page.start_address().as_mut_ptr::<u64>();
-//                 unsafe { write_volatile(ptr, i as u64) };
-//                 let val = unsafe { read_volatile(ptr) };
-//                 assert_eq!(val, i as u64,);
-//             }
+        // Write and verify distinct values.
+        for (i, (page, _)) in frames.iter().enumerate() {
+            let ptr = page.start_address().as_mut_ptr::<u64>();
+            unsafe { write_volatile(ptr, i as u64) };
+            let val = unsafe { read_volatile(ptr) };
+            assert_eq!(val, i as u64,);
+        }
 
-//             // Cleanup: Unmap all pages.
-//             for (page, _) in frames {
-//                 remove_mapped_frame(page, &mut *mapper);
-//             }
-//         }
-//     }
-
-//     // #[test_case]
-//     fn test_tlb_shootdowns_basic() -> impl Future<Output = ()> + Send + 'static {
-//         async move {
-//             let target_vaddr = VirtAddr::new(0x500000000);
-//             let current = current_core_id();
-
-//             tlb_shootdown(target_vaddr);
-
-//             let addresses = TLB_SHOOTDOWN_ADDR.lock();
-
-//             // Verify that every core except the current one got updated with the target address.
-//             for core in 0..MAX_CORES {
-//                 if core != current {
-//                     let stored = addresses[core];
-//                     assert_eq!(stored, target_vaddr.as_u64(),);
-//                 } else {
-//                     // The current core should not store the address (it performs the invlpg directly).
-//                     let stored = addresses[core];
-//                     assert_eq!(stored, 0,);
-//                 }
-//             }
-//         }
-//     }
+        // Cleanup: Unmap all pages.
+        for (page, _) in frames {
+            remove_mapped_frame(page, &mut *mapper);
+        }
+    }
 
     // Goal: Create a mapping and access it on some core such that it is cached.
     // Then, change the mapping to map to a different frame such that a TLB Shootdown
     // is necessary.
     // Finally, check the mapping on another core.
-    // #[test_case]
-    fn test_tlb_shootdowns_cross_core() -> impl Future<Output = ()> + Send + 'static {
-        async move {
-            // create mapping and set value on current core to cache page
-            let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
+    #[test_case]
+    fn test_tlb_shootdowns_cross_core() {
+        const AP: u32 = 1;
+        const PRIORITY: usize = 3;
+        const PID: u32 = 0;
 
-//             {
-//                 let mut mapper = MAPPER.lock();
-//                 let _ = create_mapping(page, &mut *mapper, None);
-//                 unsafe {
-//                     page.start_address()
-//                         .as_mut_ptr::<u64>()
-//                         .write_volatile(0xdead);
-//                 }
-//             }
+        // create mapping and set value on current core to cache page
+        let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
 
-            // mapping exists now and is cached for first core
+        {
+            let mut mapper = MAPPER.lock();
+            let _ = create_mapping(page, &mut *mapper, None);
+            unsafe {
+                page.start_address()
+                    .as_mut_ptr::<u64>()
+                    .write_volatile(0xdead);
+            }
+        }
 
-            // tell core 1 to read the value (to TLB cache) and wait until it's done
-            schedule(
-                1,
-                async move {
-                    debug!("Running async task");
-                    let value = unsafe { page.start_address().as_ptr::<u64>().read_volatile() };
-                    PRE_READ.store(value, Ordering::SeqCst);
-                },
-                3,
-                0,
-            );
+        // mapping exists now and is cached for first core
 
-//             // tell core 1 to read the value (to TLB cache) and wait until it's done
-//             schedule(
-//                 1,
-//                 async move {
-//                     debug!("Running async task");
-//                     let value = unsafe { page.start_address().as_ptr::<u64>().read_volatile() };
-//                     PRE_READ.store(value, Ordering::SeqCst);
-//                 },
-//                 3,
-//                 0,
-//             );
+        // tell core 1 to read the value (to TLB cache) and wait until it's done
+        schedule(AP, async move { pre_read(page).await }, PRIORITY, PID);
 
-//             while PRE_READ.load(Ordering::SeqCst) == 0 {
-//                 // busy wait
-//             }
+        while PRE_READ.load(Ordering::SeqCst) == 0 {
+            core::hint::spin_loop();
+        }
 
-//             serial_println!("Debug print");
+        {
+            let mut mapper = MAPPER.lock();
+            let new_frame = alloc_frame().expect("Could not find a new frame");
 
-//             {
-//                 let mut mapper = MAPPER.lock();
-//                 let new_frame = alloc_frame().expect("Could not find a new frame");
+            // could say page already mapped, which would be really dumb
+            update_mapping(page, &mut *mapper, new_frame);
 
-//                 // could say page already mapped, which would be really dumb
-//                 update_mapping(page, &mut *mapper, new_frame);
+            unsafe {
+                page.start_address()
+                    .as_mut_ptr::<u64>()
+                    .write_volatile(0x42);
+            }
+        }
 
-//                 unsafe {
-//                     page.start_address()
-//                         .as_mut_ptr::<u64>()
-//                         .write_volatile(0x42);
-//                 }
-//             }
+        // back on core 1, read the value and see if it has changed
+        schedule(AP, async move { post_read(page).await }, PRIORITY, PID);
 
-//             // back on core 1, read the value and see if it has changed
-//             schedule(
-//                 1,
-//                 async move {
-//                     let value = unsafe { page.start_address().as_mut_ptr::<u64>().read_volatile() };
-//                     POST_READ.store(value, Ordering::SeqCst);
-//                 },
-//                 0,
-//                 0,
-//             );
+        while POST_READ.load(Ordering::SeqCst) == 0 {
+            core::hint::spin_loop();
+        }
 
-//             while POST_READ.load(Ordering::SeqCst) == 0 {
-//                 // busy wait
-//             }
+        assert_eq!(POST_READ.load(Ordering::SeqCst), 0x42);
 
-//             assert_eq!(POST_READ.load(Ordering::SeqCst), 0x42);
-//         }
-//     }
-// }
-
+        let mut mapper = MAPPER.lock();
+        remove_mapped_frame(page, &mut *mapper);
+    }
 }

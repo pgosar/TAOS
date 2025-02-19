@@ -54,16 +54,12 @@ impl EventRunner {
                     }
                 }
 
-                let core = current_core_id();
-
                 self.current_event = self.next_event();
 
                 let event = self
                     .current_event
                     .as_ref()
                     .expect("Have pending events, but empty waiting queues.");
-
-                debug!("have an event? {}", event.priority);
 
                 let pe_read_lock = self.pending_events.read();
                 if pe_read_lock.contains(&event.eid.0) {

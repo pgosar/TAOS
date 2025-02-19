@@ -79,8 +79,6 @@ pub fn schedule(
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    serial_println!("Scheduled a task on core {}", cpuid);
-
     runner.schedule(future, priority_level, pid);
 }
 

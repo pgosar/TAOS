@@ -96,9 +96,7 @@ pub fn load_elf(
                 }
             }
 
-            unsafe {
-                update_permissions(page, user_mapper, flags);
-            }
+            update_permissions(page, user_mapper, flags);
         }
 
         serial_println!("Segment {} loaded successfully.", i);

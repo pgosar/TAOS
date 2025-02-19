@@ -1,5 +1,3 @@
-use core::sync::atomic::Ordering;
-
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
@@ -10,7 +8,6 @@ use alloc::sync::Arc;
 
 use crate::{
     constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
-    debug,
     events::{current_running_event_info, schedule, EventInfo},
     interrupts::{
         x2apic,
@@ -227,7 +224,6 @@ fn timer_handler(rsp: u64) {
     };
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
-    serial_println!("TIMER: Core {} Pid {}", cpuid, event.pid);
     if event.pid == 0 {
         x2apic::send_eoi();
         return;
@@ -273,8 +269,10 @@ fn timer_handler(rsp: u64) {
     }
 }
 
+// TODO Technically, this design means that when TLB Shootdows happen, each core must sequentially
+// invalidate its TLB rather than doing this in parallel. While this is slow, this is of low
+// priority to fix
 extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
-    debug!("tlb shootdown handler");
     let core = current_core_id();
     {
         let mut addresses = TLB_SHOOTDOWN_ADDR.lock();

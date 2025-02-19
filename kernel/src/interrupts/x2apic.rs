@@ -30,7 +30,6 @@ const CHANNEL_2_PORT: u16 = 0x42;
 const COMMAND_PORT: u16 = 0x43;
 const CONTROL_PORT: u16 = 0x61;
 
-pub static TLB_SHOOTDOWN_ADDR: Mutex<[u64; MAX_CORES]> = Mutex::new([0; MAX_CORES]);
 
 #[derive(Debug)]
 pub enum X2ApicError {
@@ -63,6 +62,8 @@ pub enum PitError {
 static mut APIC_MANAGER: X2ApicManager = X2ApicManager::new();
 /// Stores calibrated timer count value shared between cores
 static CALIBRATED_TIMER_COUNT: AtomicU32 = AtomicU32::new(0);
+/// Global to manage what addresses to invalidate when shootdowns happen
+pub static TLB_SHOOTDOWN_ADDR: Mutex<[u64; MAX_CORES]> = Mutex::new([0; MAX_CORES]);
 
 /// Manages x2APIC instances for all CPU cores
 pub struct X2ApicManager {
@@ -181,24 +182,6 @@ impl X2ApicManager {
         let value = ((target_id as u64) << 32) | vector as u64;
         unsafe {
             Msr::new(X2APIC_ICR).write(value);
-        }
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub fn send_ipi_all_cores(vector: u8) -> Result<(), X2ApicError> {
-        if vector < 16 {
-            return Err(X2ApicError::InvalidVector);
-        }
-
-        // just want index
-        unsafe {
-            for i in 0..APIC_MANAGER.apics.len() {
-                // deal
-                serial_println!("Sending index ipi to core {}", i);
-
-                send_ipi(i as u32, vector);
-            }
         }
         Ok(())
     }
@@ -364,12 +347,6 @@ pub fn current_core_id() -> usize {
 #[inline(always)]
 pub fn send_ipi(target_id: u32, vector: u8) {
     X2ApicManager::send_ipi(target_id, vector).expect("Failed sending IPI");
-}
-
-/// Mask the APIC timer
-#[inline(always)]
-pub fn send_ipi_all_cores(vector: u8) {
-    X2ApicManager::send_ipi_all_cores(vector).expect("Failed sending IPI");
 }
 
 #[inline(always)]
