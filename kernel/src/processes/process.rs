@@ -159,7 +159,7 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 #[no_mangle]
 pub async unsafe fn run_process_ring3(pid: u32) {
     interrupts::disable();
-    
+
     serial_println!("RUNNING PROCESS");
     let process = {
         let process_table = PROCESS_TABLE.read();
@@ -188,7 +188,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
         restore_registers_into_stack!(registers);
 
         asm!(
-            "lea r10, [rip + 0x34]", 
+            "lea r10, [rip + 0x34]",
             // TODO right now, this constant needs to change with every change to the below code
 
             "mov [rsi], r10",  // RIP in R10, store

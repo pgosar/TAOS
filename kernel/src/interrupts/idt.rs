@@ -151,7 +151,7 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
 extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
     unsafe {
         core::arch::naked_asm!(
-        "
+            "
             push rbp
             push r15
             push r14
