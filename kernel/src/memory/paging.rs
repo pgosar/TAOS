@@ -131,15 +131,6 @@ pub unsafe fn update_permissions(
 ///
 /// * `pcb`: The process PCB to clear memory for
 pub fn clear_process_frames(pcb: &mut PCB) {
-    // let mut allocator_lock = FRAME_ALLOCATOR.lock();
-    // let deallocator = match &mut *allocator_lock {
-    //     Some(deallocator) => deallocator,
-    //     None => {
-    //         panic!("No deallocator found to clear process frames")
-    //     }
-    // };
-
-    // let pml4_frame = pcb.pml4_frame;
     let mapper = unsafe { pcb.create_mapper() };
 
     with_generic_allocator(|allocator| {

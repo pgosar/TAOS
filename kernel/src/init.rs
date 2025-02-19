@@ -88,10 +88,6 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     idt::enable();
 
     debug!("AP {} entering event loop", cpu.id);
-    unsafe {
-        create_process(BINARY);
-        schedule(1, run_process_ring3(1), 0, 1);
-    }
     run_loop(cpu.id)
 }
 
