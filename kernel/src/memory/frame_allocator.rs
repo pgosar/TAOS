@@ -1,6 +1,6 @@
 use crate::memory::bitmap_frame_allocator::BitmapFrameAllocator;
 use crate::memory::boot_frame_allocator::BootIntoFrameAllocator;
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 
@@ -36,24 +36,46 @@ impl FrameDeallocator<Size4KiB> for GlobalFrameAllocator {
 
 /// Exposed function to allocate a frame that runs the global's allocate_frame
 pub fn alloc_frame() -> Option<PhysFrame> {
-    // Lock the global allocator.
-    let mut allocator_lock = FRAME_ALLOCATOR.lock();
-
-    // Get a mutable reference to the allocator if it exists, then call allocate_frame.
-    if let Some(ref mut allocator) = *allocator_lock {
-        allocator.allocate_frame()
-    } else {
-        None
-    }
+    with_generic_allocator(|allocator| allocator.allocate_frame())
 }
 
 /// Exposed function to allocate a frame that runs the global's deallocate_frame
 pub fn dealloc_frame(frame: PhysFrame<Size4KiB>) {
-    // Lock the global allocator.
-    let mut allocator_lock = FRAME_ALLOCATOR.lock();
+    with_generic_allocator(|allocator| unsafe { allocator.deallocate_frame(frame) })
+}
 
-    // Get a mutable reference to the allocator if it exists, then call allocate_frame.
-    if let Some(ref mut deallocator) = *allocator_lock {
-        unsafe { deallocator.deallocate_frame(frame) }
+pub fn with_bitmap_frame_allocator<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut BitmapFrameAllocator) -> R,
+{
+    let mut guard = FRAME_ALLOCATOR.lock();
+    let alloc = match &mut *guard {
+        Some(GlobalFrameAllocator::Bitmap(alloc)) => alloc,
+        _ => panic!("Allocator is not a BitmapFrameAllocator"),
+    };
+    f(alloc)
+}
+
+pub fn with_boot_into_frame_allocator<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut BootIntoFrameAllocator) -> R,
+{
+    let mut guard = FRAME_ALLOCATOR.lock();
+    let alloc = match &mut *guard {
+        Some(GlobalFrameAllocator::Boot(alloc)) => alloc,
+        _ => panic!("Allocator is not a BootIntoFrameAllocator"),
+    };
+    f(alloc)
+}
+
+pub fn with_generic_allocator<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut GlobalFrameAllocator) -> R,
+{
+    let mut guard = FRAME_ALLOCATOR.lock();
+    if let Some(ref mut allocator) = *guard {
+        f(allocator)
+    } else {
+        panic!("Allocator does not exist.");
     }
 }

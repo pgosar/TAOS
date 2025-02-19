@@ -8,6 +8,7 @@ use x86_64::{
 
 use crate::{
     constants::memory::{EPHEMERAL_KERNEL_MAPPINGS_START, HEAP_START},
+    memory::frame_allocator::with_generic_allocator,
     serial_println,
 };
 use crate::{
@@ -133,29 +134,31 @@ pub unsafe fn update_permissions(
 ///
 /// * `pcb`: The process PCB to clear memory for
 pub fn clear_process_frames(pcb: &mut PCB) {
-    let mut allocator_lock = FRAME_ALLOCATOR.lock();
-    let deallocator = match &mut *allocator_lock {
-        Some(deallocator) => deallocator,
-        None => {
-            panic!("No deallocator found to clear process frames")
-        }
-    };
+    // let mut allocator_lock = FRAME_ALLOCATOR.lock();
+    // let deallocator = match &mut *allocator_lock {
+    //     Some(deallocator) => deallocator,
+    //     None => {
+    //         panic!("No deallocator found to clear process frames")
+    //     }
+    // };
 
-    let pml4_frame = pcb.pml4_frame;
-    let mut mapper = unsafe { pcb.create_mapper() };
+    // let pml4_frame = pcb.pml4_frame;
+    let mapper = unsafe { pcb.create_mapper() };
 
-    // The first 256 entries are the process mappings in the pml4
-    for i in 0..256 {
-        let addr = mapper.level_4_table()[i].addr();
-        let unused = mapper.level_4_table()[i].is_unused();
-        if unused {
-            continue;
+    with_generic_allocator(|allocator| {
+        for i in 0..256 {
+            let addr = mapper.level_4_table()[i].addr();
+            let unused = mapper.level_4_table()[i].is_unused();
+            if unused {
+                continue;
+            }
+            let pdpt_frame = PhysFrame::containing_address(addr);
+            unsafe {
+                free_page_table(pdpt_frame, 3, allocator, HHDM_OFFSET.as_u64());
+            }
         }
-        let pdpt_frame = PhysFrame::containing_address(addr);
-        unsafe {
-            free_page_table(pdpt_frame, 3, deallocator, HHDM_OFFSET.as_u64());
-        }
-    }
+    });
+
     serial_println!("Process memory cleared");
 }
 

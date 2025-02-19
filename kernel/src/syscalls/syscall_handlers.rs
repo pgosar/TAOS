@@ -2,7 +2,7 @@ use crate::{
     constants::syscalls::SYSCALL_EXIT,
     events::{current_running_event_info, EventInfo},
     memory::{
-        frame_allocator::{GlobalFrameAllocator, FRAME_ALLOCATOR},
+        frame_allocator::{with_bitmap_frame_allocator, GlobalFrameAllocator, FRAME_ALLOCATOR},
         paging::clear_process_frames,
     },
     processes::process::{ProcessState, PROCESS_TABLE},
@@ -45,15 +45,14 @@ fn sys_exit() {
 
         let pcb = process.pcb.get();
 
-        let mut allocator_lock = FRAME_ALLOCATOR.lock();
-        let bitmap_allocator = match &mut *allocator_lock {
-            Some(GlobalFrameAllocator::Bitmap(bitmap_alloc)) => bitmap_alloc,
-            _ => panic!("Allocator is not a BitmapFrameAllocator"),
-        };
-        bitmap_allocator.print_bitmap();
-        drop(allocator_lock);
+        with_bitmap_frame_allocator(|bitmap_alloc| {
+            bitmap_alloc.print_bitmap();
+        });
         (*pcb).state = ProcessState::Terminated;
         clear_process_frames(&mut *pcb);
+        with_bitmap_frame_allocator(|bitmap_alloc| {
+            bitmap_alloc.print_bitmap();
+        });
         process_table.remove(&event.pid);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };

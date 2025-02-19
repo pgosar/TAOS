@@ -16,11 +16,11 @@ use x86_64::VirtAddr;
 use crate::constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR};
 use crate::events::{current_running_event_info, schedule, EventInfo};
 use crate::interrupts::x2apic;
-use crate::prelude::*;
 use crate::memory::paging::create_mapping;
+use crate::memory::HHDM_OFFSET;
+use crate::prelude::*;
 use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
 use crate::processes::registers::Registers;
-use crate::memory::HHDM_OFFSET;
 
 lazy_static! {
     /// The system's Interrupt Descriptor Table.
@@ -129,9 +129,8 @@ extern "x86-interrupt" fn page_fault_handler(
     let new_pml4_virt = VirtAddr::new((*HHDM_OFFSET).as_u64()) + new_pml4_phys.as_u64();
     let new_pml4_ptr: *mut PageTable = new_pml4_virt.as_mut_ptr();
 
-    let mut mapper = unsafe {
-        OffsetPageTable::new(&mut *new_pml4_ptr, VirtAddr::new((*HHDM_OFFSET).as_u64()))
-    };
+    let mut mapper =
+        unsafe { OffsetPageTable::new(&mut *new_pml4_ptr, VirtAddr::new((*HHDM_OFFSET).as_u64())) };
 
     let stack_pointer = stack_frame.stack_pointer.as_u64();
 
