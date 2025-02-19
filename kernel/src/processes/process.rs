@@ -1,17 +1,21 @@
 extern crate alloc;
 
-use crate::interrupts::gdt;
-use crate::memory::frame_allocator::alloc_frame;
-use crate::memory::{HHDM_OFFSET, MAPPER};
-use crate::processes::{loader::load_elf, registers::Registers};
-use crate::{restore_registers_into_stack, serial_println};
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU32, Ordering};
+use crate::{
+    interrupts::gdt,
+    memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
+    processes::{loader::load_elf, registers::Registers},
+    restore_registers_into_stack, serial_println,
+};
+use alloc::{collections::BTreeMap, sync::Arc};
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicU32, Ordering},
+};
 use spin::rwlock::RwLock;
-use x86_64::instructions::interrupts;
-use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB};
+use x86_64::{
+    instructions::interrupts,
+    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
+};
 
 // process counter must be thread-safe
 // PID 0 will ONLY be used for errors/PID not found
@@ -238,10 +242,4 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             options(nostack)
         );
     }
-
-    // rust compiler generates this by default
-    // The address of this will be program counter from the iretq instruction in the load registers macro
-    // return Poll::Ready(())
-    serial_println!("Returned from process");
-    serial_println!("Process: {:#x?}", *process);
 }

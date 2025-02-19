@@ -5,10 +5,12 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START;
-use crate::memory::{
-    frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
-    HHDM_OFFSET,
+use crate::{
+    constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START,
+    memory::{
+        frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+        HHDM_OFFSET,
+    },
 };
 
 static mut NEXT_EPH_OFFSET: u64 = 0;

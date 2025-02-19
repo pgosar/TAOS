@@ -1,10 +1,15 @@
-use alloc::collections::btree_map::BTreeMap;
-use alloc::sync::Arc;
-use alloc::{boxed::Box, collections::btree_set::BTreeSet};
-use spin::mutex::Mutex;
-use spin::rwlock::RwLock;
+use alloc::{
+    boxed::Box,
+    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
+    sync::Arc,
+};
+use spin::{mutex::Mutex, rwlock::RwLock};
 
-use core::{future::Future, pin::Pin, sync::atomic::AtomicU64, sync::atomic::Ordering};
+use core::{
+    future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crossbeam_queue::SegQueue;
 

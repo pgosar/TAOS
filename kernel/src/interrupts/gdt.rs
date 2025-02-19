@@ -11,15 +11,22 @@
 #![allow(dead_code)]
 
 use lazy_static::lazy_static;
-use x86_64::instructions::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
-use x86_64::instructions::tables::load_tss;
-use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
-use x86_64::structures::tss::TaskStateSegment;
-use x86_64::PrivilegeLevel;
-use x86_64::VirtAddr;
+use x86_64::{
+    instructions::{
+        segmentation::{Segment, CS, DS, ES, FS, GS, SS},
+        tables::load_tss,
+    },
+    structures::{
+        gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
+        tss::TaskStateSegment,
+    },
+    PrivilegeLevel, VirtAddr,
+};
 
-use crate::constants::gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE, RING0_STACK_SIZE};
-use crate::constants::MAX_CORES;
+use crate::constants::{
+    gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE, RING0_STACK_SIZE},
+    MAX_CORES,
+};
 
 /// Number of base GDT entries: null descriptor + kernel code/data + user code/data
 const BASE_ENTRIES: usize = 5;

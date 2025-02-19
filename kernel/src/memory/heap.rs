@@ -1,14 +1,15 @@
-use crate::constants::memory::{HEAP_SIZE, HEAP_START};
-use crate::memory::{frame_allocator::FRAME_ALLOCATOR, paging::create_mapping};
-use crate::serial_println;
+use crate::{
+    constants::memory::{HEAP_SIZE, HEAP_START},
+    memory::{frame_allocator::FRAME_ALLOCATOR, paging::create_mapping},
+    serial_println,
+};
 use talc::{ClaimOnOom, Span, Talc, Talck};
 use x86_64::{
     structures::paging::{mapper::MapToError, Mapper, Page, Size4KiB},
     VirtAddr,
 };
 
-use super::bitmap_frame_allocator::BitmapFrameAllocator;
-use super::frame_allocator::GlobalFrameAllocator;
+use super::{bitmap_frame_allocator::BitmapFrameAllocator, frame_allocator::GlobalFrameAllocator};
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
