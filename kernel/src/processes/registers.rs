@@ -3,62 +3,64 @@
 #[macro_export]
 macro_rules! push_registers {
     () => {{
-        unsafe {
-            core::arch::asm!(
-                "push rbp",
-                "push r15",
-                "push r14",
-                "push r13",
-                "push r12",
-                "push r11",
-                "push r10",
-                "push r9",
-                "push r8",
-                "push rdi",
-                "push rsi",
-                "push rdx",
-                "push rcx",
-                "push rbx",
-                "push rax",
-                options(preserves_flags),
-            );
-        }
+        core::arch::asm!(
+            "push rbp",
+            "push r15",
+            "push r14",
+            "push r13",
+            "push r12",
+            "push r11",
+            "push r10",
+            "push r9",
+            "push r8",
+            "push rdi",
+            "push rsi",
+            "push rdx",
+            "push rcx",
+            "push rbx",
+            "push rax",
+            options(preserves_flags),
+        );
     }};
 }
 
 #[macro_export]
-macro_rules! restore_registers {
+macro_rules! restore_registers_into_stack {
     ($regs:expr) => {
         asm!(
-            "mov rax, {0}",
-            "mov rbx, {1}",
-            "mov rcx, {2}",
-            "mov rdx, {3}",
-            "mov rsi, {4}",
-            "mov rdi, {5}",
-            "mov r8, {6}",
-            "mov r9, {7}",
-            "mov r10, {8}",
-            "mov r11, {9}",
-            "mov r12, {10}",
-            "mov r13, {11}",
-            "mov r14, {12}",
-            "mov r15, {13}",
+            "sub rsp, 64",
+            "push {0}",
+            "push {1}",
+            "push {2}",
+            "push {3}",
+            "push {4}",
+            "push {5}",
+            "push {6}",
+            "push {7}",
+            "push {8}",
+            "push {9}",
+            "push {10}",
+            "push {11}",
+            "push {12}",
+            "push {13}",
+            "push {14}",
+            "add rsp, 184",
 
-            in(reg) $regs.rax,
-            in(reg) $regs.rbx,
-            in(reg) $regs.rcx,
-            in(reg) $regs.rdx,
-            in(reg) $regs.rsi,
-            in(reg) $regs.rdi,
-            in(reg) $regs.r8,
-            in(reg) $regs.r9,
-            in(reg) $regs.r10,
-            in(reg) $regs.r11,
-            in(reg) $regs.r12,
-            in(reg) $regs.r13,
-            in(reg) $regs.r14,
+            in(reg) $regs.rbp,
             in(reg) $regs.r15,
+            in(reg) $regs.r14,
+            in(reg) $regs.r13,
+            in(reg) $regs.r12,
+            in(reg) $regs.r11,
+            in(reg) $regs.r10,
+            in(reg) $regs.r9,
+            in(reg) $regs.r8,
+            in(reg) $regs.rdi,
+            in(reg) $regs.rsi,
+            in(reg) $regs.rdx,
+            in(reg) $regs.rcx,
+            in(reg) $regs.rbx,
+            in(reg) $regs.rax
         );
     };
 }
