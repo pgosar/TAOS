@@ -4,11 +4,7 @@ use crate::{
     interrupts::gdt,
     memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
     processes::{loader::load_elf, registers::Registers},
-<<<<<<< HEAD
     serial_println,
-=======
-    restore_registers_into_stack, serial_println,
->>>>>>> main
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
