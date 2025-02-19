@@ -2,9 +2,7 @@ use crate::{
     constants::{
         memory::PAGE_SIZE,
         processes::{STACK_SIZE, STACK_START},
-    },
-    memory::paging::{create_mapping, update_permissions},
-    serial_println,
+    }, memory::{frame_allocator::with_generic_allocator, paging::{create_mapping, update_permissions}, HHDM_OFFSET}, serial, serial_println
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};
 use goblin::{
@@ -12,7 +10,7 @@ use goblin::{
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
 };
 use x86_64::{
-    structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB},
+    structures::paging::{mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB},
     VirtAddr,
 };
 
@@ -109,6 +107,10 @@ pub fn load_elf(
                 .1
                 .flush();
             serial_println!("Kernel Mapper unmapped frame 0x{:x}", frame.start_address());
+            with_generic_allocator(|allocator| unsafe { kernel_mapper.clean_up(allocator) });
+            // print_kernel_intermediate_levels(kernel_mapper);
+
+
         }
 
         serial_println!("Segment {} loaded successfully.", i);
@@ -136,4 +138,31 @@ pub fn load_elf(
     serial_println!("User stack mapped.  SP=0x{:x}", stack_end.as_u64());
 
     (stack_end, elf.header.e_entry)
+}
+
+fn print_kernel_intermediate_levels(    kernel_mapper: &mut OffsetPageTable<'static>,) {
+    let pml4 = kernel_mapper.level_4_table();
+    for i in 256..512 {
+        let entry = &pml4[i];
+        if entry.is_unused() {
+            continue;
+        }
+
+        let frame = PhysFrame::containing_address(entry.addr());
+        print_levels(frame, 3, HHDM_OFFSET.as_u64());
+    }
+}
+
+fn print_levels(frame: PhysFrame, level: u8, hhdm_offset: u64) {
+    if level > 1 {
+        serial_println!("Frame at level {} is 0x{:x}", level, frame.start_address());
+        let virt = hhdm_offset + frame.start_address().as_u64();
+        let table = unsafe { &mut *(virt as *mut PageTable) };
+        for entry in table.iter() {
+            if !entry.is_unused() {
+                print_levels(PhysFrame::containing_address(entry.addr()), level - 1, hhdm_offset);
+            }
+        }
+    }
+
 }

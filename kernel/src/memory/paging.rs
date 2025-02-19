@@ -73,7 +73,7 @@ pub fn create_mapping(
     };
 
     // serial_println!("Allocated page with flags: {}", flags.unwrap_or(PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits());
-    map_to_result.expect("map_to failed").flush();
+    // map_to_result.expect("map_to failed").flush();
     frame
 }
 
@@ -93,6 +93,8 @@ pub fn map_kernel_frame(
         NEXT_EPH_OFFSET += 0x1000; // move up by a page
         current
     };
+
+    serial_println!("IM MAP KERNEL FRAME 0x{:x}", frame.start_address());
 
     let temp_virt = VirtAddr::new(EPHEMERAL_KERNEL_MAPPINGS_START + offset);
     let temp_page = Page::containing_address(temp_virt);

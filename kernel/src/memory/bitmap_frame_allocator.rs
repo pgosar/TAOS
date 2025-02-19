@@ -75,7 +75,7 @@ impl BitmapFrameAllocator {
         let start_frame = base / FRAME_SIZE;
         let end_frame = (base + length) / FRAME_SIZE;
         for frame_index in start_frame..end_frame {
-            self.clear_bit(frame_index); // set to 0 = free
+            self.clear_bit_no_assert(frame_index); // set to 0 = free
         }
     }
 
@@ -108,6 +108,20 @@ impl BitmapFrameAllocator {
 
     /// clear a particular bit (0), taking in frame_index (usize)
     fn clear_bit(&mut self, frame_index: usize) {
+        assert!(frame_index < self.total_frames);
+
+        let byte_index = frame_index / 64;
+        let bit_index = frame_index % 64;
+
+        let mask = 1 << bit_index;
+        if self.bitmap[byte_index] == 0 {
+            assert!(self.bitmap[byte_index] == 1, "Trying to double free a frame!");
+        }
+        self.bitmap[byte_index] &= !mask;
+        self.free_frames += 1;
+    }
+
+    fn clear_bit_no_assert(&mut self, frame_index: usize) {
         assert!(frame_index < self.total_frames);
 
         let byte_index = frame_index / 64;
