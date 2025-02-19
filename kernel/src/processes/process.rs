@@ -4,12 +4,11 @@ use crate::{
     interrupts::gdt,
     memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
     processes::{loader::load_elf, registers::Registers},
-    restore_registers_into_stack, serial_println,
+    serial_println,
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
-    cell::UnsafeCell,
-    sync::atomic::{AtomicU32, Ordering},
+    arch::naked_asm, cell::UnsafeCell, sync::atomic::{AtomicU32, Ordering}
 };
 use spin::rwlock::RwLock;
 use x86_64::{
@@ -189,57 +188,103 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
-        restore_registers_into_stack!(registers);
-
         asm!(
-            "lea r10, [rip + 0x34]",
-            // TODO right now, this constant needs to change with every change to the below code
-
-            "mov [rsi], r10",  // RIP in R10, store
-
-            "mov r11, rsp",         // Move RSP to R10
-            "mov [r9], r11", // store RSP (from R11)
-
-            // Needed for cross-privilege iretq
-            "push r8",        //ss
-            "push rcx",       //userrsp
-            "push rax",       //rflags
-            "push rdi",       //cs
-            "push rdx",       //rip
-
-            // Restore all registers before entering process
-            "sub rsp, 144",
-            "pop rax",
-            "pop rbx",
-            "pop rcx",
+            "push rax",
+            "push rcx",
+            "push rdx",
+            "call call_process",
             "pop rdx",
-            "pop rsi",
-            "pop rdi",
-            "pop r8",
-            "pop r9",
-            "pop r10",
-            "pop r11",
-            "pop r12",
-            "pop r13",
-            "pop r14",
-            "pop r15",
-            "pop rbp",
-            "add rsp, 24",
-
-            "sti",      //re-enable interrupts
-
-            "iretq",    // call process
-            "cli",
-
-            in("r8") user_ds,
-            in("rcx") registers.rsp,
-            in("rax") registers.rflags,
-            in("rdi") user_cs,
-            in("rdx") registers.rip,
-
-            in("rsi") &(*process).kernel_rip,
-            in("r9") &(*process).kernel_rsp,
-            options(nostack)
+            "pop rcx",
+            "pop rax",
+            in("rdi") registers.as_ref() as *const Registers,
+            in("rsi") user_ds,
+            in("rdx") user_cs,
+            in("rcx") &(*process).kernel_rip,
+            in("r8")  &(*process).kernel_rsp
         );
     }
+}
+
+#[naked]
+#[allow(undefined_naked_function_abi)]
+#[no_mangle]
+// unsafe extern "C" fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64, 
+//                        kernel_rip: *const u64, kernel_rsp: *const u64) {
+unsafe fn call_process() {
+    naked_asm!(
+        //save callee-saved registers
+        "
+        push rbp
+        push r15
+        push r14
+        push r13
+        push r12
+        push r11
+        push r10
+        push r9
+        push r8
+        push rdi
+        push rsi
+        push rbx
+        ",
+        "lea r10, [rip + 0x5E]",
+        // TODO right now, this constant needs to change with every change to the below code
+
+        "mov [rcx], r10",  // RIP in R10, store
+        "mov r11, rsp",    // Move RSP to R11
+        "mov [r8], r11",   // store RSP (from R11)
+
+        // Needed for cross-privilege iretq
+        "push rsi",        //ss
+        "mov rax, [rdi + 120]",
+        "push rax",       //userrsp
+        "mov rax, [rdi + 136]",
+        "push rax",       //rflags
+        "push rdx",     //cs
+        "mov rax, [rdi + 128]",
+        "push rax",       //rip
+
+        //     rdi = 0xffffffff00029c20
+
+        // Restore all registers before entering process
+        "mov rax, [rdi]",
+        "mov rbx, [rdi+8]",
+        "mov rcx, [rdi+16]",
+        "mov rdx, [rdi+24]",
+        "mov rsi, [rdi+32]",
+
+        "mov r8,  [rdi+48]",
+        "mov r9,  [rdi+56]",
+        "mov r10, [rdi+64]",
+        "mov r11, [rdi+72]",
+        "mov r12, [rdi+80]",
+        "mov r13, [rdi+88]",
+        "mov r14, [rdi+96]",
+        "mov r15, [rdi+104]",
+        "mov rbp, [rdi+112]",
+
+        "mov rdi, [rdi+40]",
+
+        "sti",      //enable interrupts
+
+        "iretq",    // call process
+
+        "cli",      //disable interrupts
+                    //restore callee-saved registers
+        "
+        pop rbx
+        pop rsi
+        pop rdi
+        pop r8
+        pop r9
+        pop r10
+        pop r11
+        pop r12
+        pop r13
+        pop r14
+        pop r15
+        pop rbp
+        ",
+        "ret"
+    );
 }
