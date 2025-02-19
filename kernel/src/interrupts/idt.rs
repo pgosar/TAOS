@@ -8,19 +8,26 @@
 
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
-use x86_64::instructions::interrupts;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use x86_64::structures::paging::{OffsetPageTable, Page, PageTable};
-use x86_64::VirtAddr;
+use x86_64::{
+    instructions::interrupts,
+    structures::{
+        idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+        paging::{OffsetPageTable, Page, PageTable},
+    },
+    VirtAddr,
+};
 
-use crate::constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR};
-use crate::events::{current_running_event_info, schedule, EventInfo};
-use crate::interrupts::x2apic;
-use crate::memory::paging::create_mapping;
-use crate::memory::HHDM_OFFSET;
-use crate::prelude::*;
-use crate::processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE};
-use crate::processes::registers::Registers;
+use crate::{
+    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR},
+    events::{current_running_event_info, schedule, EventInfo},
+    interrupts::x2apic,
+    memory::{paging::create_mapping, HHDM_OFFSET},
+    prelude::*,
+    processes::{
+        process::{run_process_ring3, ProcessState, PROCESS_TABLE},
+        registers::Registers,
+    },
+};
 
 lazy_static! {
     /// The system's Interrupt Descriptor Table.

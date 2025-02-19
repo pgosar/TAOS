@@ -1,7 +1,6 @@
 use super::{Event, EventRunner};
 
-use alloc::collections::btree_set::BTreeSet;
-use alloc::sync::Arc;
+use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;

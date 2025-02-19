@@ -2,8 +2,7 @@ use crate::{
     constants::memory::{BITMAP_ENTRY_SIZE, FRAME_SIZE, FULL_BITMAP_ENTRY},
     serial_println,
 };
-use limine::memory_map::EntryType;
-use limine::response::MemoryMapResponse;
+use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use x86_64::{
     structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
     PhysAddr,

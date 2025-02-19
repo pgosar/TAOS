@@ -8,14 +8,12 @@ use x86_64::{
 
 use crate::{
     constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START,
-    memory::frame_allocator::with_generic_allocator, serial_println,
+    memory::frame_allocator::with_generic_allocator, processes::process::PCB, serial_println,
 };
-use crate::{
-    memory::{
-        frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
-        HHDM_OFFSET,
-    },
-    processes::process::PCB,
+
+use super::{
+    frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
+    HHDM_OFFSET,
 };
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
