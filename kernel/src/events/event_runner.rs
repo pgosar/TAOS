@@ -29,6 +29,7 @@ impl EventRunner {
             self.rewake_queue.pop()
         } else {
             let mut event = None;
+
             for i in 0..NUM_EVENT_PRIORITIES {
                 if !self.event_queues[i].is_empty() {
                     event = self.event_queues[i].pop();

@@ -67,16 +67,27 @@ pub unsafe fn run_loop(cpuid: u32) -> ! {
     (*runner).run_loop()
 }
 
-pub fn schedule(
+pub fn schedule_kernel(
     cpuid: u32,
     future: impl Future<Output = ()> + 'static + Send,
     priority_level: usize,
+) {
+    let runners = EVENT_RUNNERS.read();
+    let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
+    runner.schedule(future, priority_level, 0);
+}
+
+pub fn schedule_process(
+    cpuid: u32,
+    future: impl Future<Output = ()> + 'static + Send,
     pid: u32, // 0 as kernel/sentinel
 ) {
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.schedule(future, priority_level, pid);
+    // TODO smarter default priority?
+    runner.schedule(future, NUM_EVENT_PRIORITIES/2, pid);
 }
 
 // still happens even if i lock process creation/running to only happen on cpu id 1
