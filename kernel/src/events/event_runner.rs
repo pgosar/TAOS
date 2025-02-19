@@ -13,7 +13,9 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::{constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println};
+use crate::{
+    constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println,
+};
 
 impl EventRunner {
     pub fn init() -> EventRunner {

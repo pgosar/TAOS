@@ -6,20 +6,12 @@
 //! - Timer masking/unmasking
 //! - End-of-interrupt (EOI) handling
 
-use crate::constants::{idt::TIMER_VECTOR, MAX_CORES};
+use crate::{constants::{idt::TIMER_VECTOR, MAX_CORES}, serial_println};
 use core::sync::atomic::{AtomicU32, Ordering};
 use raw_cpuid::CpuId;
 use x86_64::{instructions::port::Port, registers::model_specific::Msr};
-
-/// MSR register addresses for x2APIC control
-use crate::constants::idt::TIMER_VECTOR;
-use crate::constants::MAX_CORES;
-use crate::serial_println;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use raw_cpuid::CpuId;
 use spin::Mutex;
-use x86_64::instructions::port::Port;
-use x86_64::registers::model_specific::Msr;
+
 // MSR register constants
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const X2APIC_EOI: u32 = 0x80B;
@@ -201,7 +193,8 @@ impl X2ApicManager {
 
         // just want index
         unsafe {
-            for i in 0..APIC_MANAGER.apics.len() { // deal
+            for i in 0..APIC_MANAGER.apics.len() {
+                // deal
                 serial_println!("Sending index ipi to core {}", i);
 
                 send_ipi(i as u32, vector);

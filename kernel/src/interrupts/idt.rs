@@ -1,30 +1,27 @@
 use core::sync::atomic::Ordering;
 
 use lazy_static::lazy_static;
-use x86_64::instructions::interrupts;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-
-use alloc::sync::Arc;
-use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
 
+use alloc::sync::Arc;
+
 use crate::{
-    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR},
+    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
+    debug,
     events::{current_running_event_info, schedule, EventInfo},
-    interrupts::x2apic,
+    interrupts::{
+        x2apic,
+        x2apic::{current_core_id, TLB_SHOOTDOWN_ADDR},
+    },
     prelude::*,
     processes::{
         process::{run_process_ring3, ProcessState, PROCESS_TABLE},
         registers::Registers,
     },
 };
-use crate::constants::idt::TIMER_VECTOR;
-use crate::constants::idt::TLB_SHOOTDOWN_VECTOR;
-use crate::interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR};
-use crate::{debug, prelude::*};
 
 lazy_static! {
     /// The system's Interrupt Descriptor Table.
@@ -41,10 +38,10 @@ lazy_static! {
                 .set_stack_index(0);
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
-
         idt[SYSCALL_HANDLER]
             .set_handler_fn(syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
+        idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
     };
 }
@@ -230,6 +227,7 @@ fn timer_handler(rsp: u64) {
     };
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
+    serial_println!("TIMER: Core {} Pid {}", cpuid, event.pid);
     if event.pid == 0 {
         x2apic::send_eoi();
         return;
@@ -288,4 +286,5 @@ extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
             addresses[core] = 0;
         }
     }
+    x2apic::send_eoi();
 }

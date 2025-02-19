@@ -4,7 +4,7 @@ use x86_64::VirtAddr;
 
 use crate::{
     constants::{idt::TLB_SHOOTDOWN_VECTOR, MAX_CORES},
-    interrupts::x2apic::{current_core_id, send_ipi_all_cores, TLB_SHOOTDOWN_ADDR},
+    interrupts::x2apic::{current_core_id, send_ipi, TLB_SHOOTDOWN_ADDR},
 };
 
 pub fn tlb_shootdown(target_vaddr: VirtAddr) {
@@ -17,11 +17,10 @@ pub fn tlb_shootdown(target_vaddr: VirtAddr) {
         for core in 0..MAX_CORES {
             if core != current_core {
                 addresses[core] = vaddr;
+                send_ipi(core as u32, TLB_SHOOTDOWN_VECTOR);
             }
         }
     }
-
-    send_ipi_all_cores(TLB_SHOOTDOWN_VECTOR);
 
     unsafe {
         asm!("invlpg [{}]", in(reg) vaddr, options(nostack, preserves_flags));

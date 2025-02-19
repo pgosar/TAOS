@@ -3,13 +3,8 @@ use alloc::{
     collections::{btree_map::BTreeMap, btree_set::BTreeSet},
     sync::Arc,
 };
-use spin::{mutex::Mutex, rwlock::RwLock};
-use alloc::collections::btree_map::BTreeMap;
-use alloc::sync::Arc;
-use alloc::{boxed::Box, collections::btree_set::BTreeSet};
 use log::debug;
-use spin::mutex::Mutex;
-use spin::rwlock::RwLock;
+use spin::{mutex::Mutex, rwlock::RwLock};
 
 use core::{
     future::Future,
@@ -19,9 +14,9 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::constants::events::NUM_EVENT_PRIORITIES;
-use crate::interrupts::x2apic::current_core_id;
-use crate::serial_println;
+use crate::{
+    constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println,
+};
 
 mod event;
 mod event_runner;
@@ -71,7 +66,6 @@ static EVENT_RUNNERS: RwLock<BTreeMap<u32, RwLock<EventRunner>>> = RwLock::new(B
 pub unsafe fn run_loop(cpuid: u32) -> ! {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").as_mut_ptr();
-
 
     (*runner).run_loop()
 }

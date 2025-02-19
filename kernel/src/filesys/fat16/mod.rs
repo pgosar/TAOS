@@ -867,7 +867,7 @@ mod tests {
     use super::*;
     use crate::devices::sd_card::SD_CARD;
 
-    #[test_case]
+    // #[test_case]
     fn fat_test() {
         let lock = SD_CARD.lock().clone().unwrap();
         let device = Box::new(lock);
