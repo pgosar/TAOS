@@ -8,7 +8,9 @@ use x86_64::{
 
 use crate::{
     constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START,
-    memory::frame_allocator::with_generic_allocator, processes::process::PCB, serial_println,
+    memory::frame_allocator::{with_bitmap_frame_allocator, with_generic_allocator},
+    processes::process::PCB,
+    serial_println,
 };
 
 use super::{
@@ -131,29 +133,42 @@ pub unsafe fn update_permissions(
 ///
 /// * `pcb`: The process PCB to clear memory for
 pub fn clear_process_frames(pcb: &mut PCB) {
+    let pml4_frame = pcb.pml4_frame;
     let mapper = unsafe { pcb.create_mapper() };
 
-    with_generic_allocator(|allocator| {
-        for i in 0..256 {
-            let addr = mapper.level_4_table()[i].addr();
-            let unused = mapper.level_4_table()[i].is_unused();
-            if unused {
-                continue;
-            }
-            let pdpt_frame = PhysFrame::containing_address(addr);
-            unsafe {
-                free_page_table(pdpt_frame, 3, allocator, HHDM_OFFSET.as_u64());
-            }
-        }
+    with_bitmap_frame_allocator(|alloc| {
+        serial_println!("Before clearing process memory");
+        alloc.print_bitmap_free_frames();
     });
 
-    serial_println!("Process memory cleared");
+    with_generic_allocator(|deallocator| {
+        // Iterate over first 256 entries (user space)
+        for i in 0..256 {
+            let entry = &mapper.level_4_table()[i];
+            if entry.is_unused() {
+                continue;
+            }
+
+            let pdpt_frame = PhysFrame::containing_address(entry.addr());
+            unsafe {
+                free_page_table(pdpt_frame, 3, deallocator, HHDM_OFFSET.as_u64());
+            }
+        }
+        unsafe { deallocator.deallocate_frame(pml4_frame) };
+    });
+
+    with_bitmap_frame_allocator(|alloc| {
+        serial_println!("After clearing process memory");
+        alloc.print_bitmap_free_frames();
+    });
 }
 
-/// Recursively deallocates a page table
+/// Helper function to recursively multi level page tables
 ///
-/// # Safety
-/// TODO
+/// * `frame`: the current page table frame iterating over
+/// * `level`: the current level of the page table we're on
+/// * `deallocator`:
+/// * `hhdm_offset`:
 unsafe fn free_page_table(
     frame: PhysFrame,
     level: u8,
@@ -176,5 +191,7 @@ unsafe fn free_page_table(
             let page_frame = PhysFrame::containing_address(entry.addr());
             deallocator.deallocate_frame(page_frame);
         }
+        entry.set_unused();
     }
+    deallocator.deallocate_frame(frame);
 }

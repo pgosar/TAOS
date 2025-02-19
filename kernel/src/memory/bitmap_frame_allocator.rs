@@ -129,8 +129,12 @@ impl BitmapFrameAllocator {
         (self.bitmap[byte_index] & mask) != 0
     }
 
-    pub fn print_bitmap(&self) {
+    pub fn print_bitmap_free_frames(&self) {
         serial_println!("Free frames: {:?}", self.free_frames);
+    }
+
+    pub fn print_bitmap(&self) {
+        serial_println!("Bitmap: {:?}", self.bitmap);
     }
 }
 
@@ -145,6 +149,7 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
                 self.set_bit(self.to_allocate);
                 let addr = self.to_allocate * FRAME_SIZE;
                 self.to_allocate = (self.to_allocate + 1) % self.total_frames;
+                serial_println!("Allocating frame with PA 0x{:x}", addr);
                 return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
             }
 
@@ -156,6 +161,7 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
 impl FrameDeallocator<Size4KiB> for BitmapFrameAllocator {
     /// deallocates a frame
     unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {
+        serial_println!("Deallocating frame with PA 0x{:x}", frame.start_address());
         self.mark_frame_free(frame);
     }
 }

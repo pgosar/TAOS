@@ -26,7 +26,6 @@ pub fn load_elf(
 ) -> (VirtAddr, u64) {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
     serial_println!("ELF parsed, entry = 0x{:x}", elf.header.e_entry);
-
     for (i, ph) in elf.program_headers.iter().enumerate() {
         if ph.p_type != PT_LOAD {
             continue;
@@ -58,6 +57,7 @@ pub fn load_elf(
         // then do a kernel alias to copy data in
         for page in Page::range_inclusive(start_page, end_page) {
             let frame = create_mapping(page, user_mapper, Some(default_flags));
+            serial_println!("Map kernel frame: 0x{:x}", frame.start_address());
             let kernel_alias = map_kernel_frame(kernel_mapper, frame, default_flags);
             // now `kernel_alias` is a kernel virtual address of that same frame
 
@@ -108,6 +108,7 @@ pub fn load_elf(
                 .expect("Unmapping kernel frame failed")
                 .1
                 .flush();
+            serial_println!("Kernel Mapper unmapped frame 0x{:x}", frame.start_address());
         }
 
         serial_println!("Segment {} loaded successfully.", i);
