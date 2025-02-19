@@ -257,11 +257,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{
-        constants::memory::PAGE_SIZE,
-        events::schedule,
-        memory::MAPPER,
-    };
+    use crate::{constants::memory::PAGE_SIZE, events::schedule, memory::MAPPER};
     use alloc::vec::Vec;
     use x86_64::structures::paging::mapper::TranslateError;
 

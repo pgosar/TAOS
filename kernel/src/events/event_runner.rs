@@ -2,7 +2,6 @@ use super::{Event, EventRunner};
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use futures::task::waker_ref;
-use log::debug;
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
 
@@ -13,9 +12,7 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::{
-    constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println,
-};
+use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 impl EventRunner {
     pub fn init() -> EventRunner {

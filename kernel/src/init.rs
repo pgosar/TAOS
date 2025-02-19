@@ -116,4 +116,3 @@ fn wake_cores() -> u32 {
     debug!("All CPUs initialized");
     bsp_id
 }
-

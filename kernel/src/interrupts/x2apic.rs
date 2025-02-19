@@ -6,11 +6,11 @@
 //! - Timer masking/unmasking
 //! - End-of-interrupt (EOI) handling
 
-use crate::{constants::{idt::TIMER_VECTOR, MAX_CORES}, serial_println};
+use crate::constants::{idt::TIMER_VECTOR, MAX_CORES};
 use core::sync::atomic::{AtomicU32, Ordering};
 use raw_cpuid::CpuId;
-use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 use spin::Mutex;
+use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 
 // MSR register constants
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
@@ -29,7 +29,6 @@ const PIT_FREQUENCY: u64 = 1_193_182;
 const CHANNEL_2_PORT: u16 = 0x42;
 const COMMAND_PORT: u16 = 0x43;
 const CONTROL_PORT: u16 = 0x61;
-
 
 #[derive(Debug)]
 pub enum X2ApicError {

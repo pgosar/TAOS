@@ -3,7 +3,6 @@ use alloc::{
     collections::{btree_map::BTreeMap, btree_set::BTreeSet},
     sync::Arc,
 };
-use log::debug;
 use spin::{mutex::Mutex, rwlock::RwLock};
 
 use core::{
@@ -14,9 +13,7 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::{
-    constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic::current_core_id, serial_println,
-};
+use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 mod event;
 mod event_runner;
