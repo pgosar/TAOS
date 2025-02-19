@@ -1,3 +1,11 @@
+//! - Interrupt Descriptor Table (IDT) setup
+//!
+//! This module provides:
+//! - Interrupt Descriptor Table (IDT) setup
+//! - Exception handlers (breakpoint, page fault, double fault, etc.)
+//! - Timer interrupt handling
+//! - Functions to enable/disable interrupts
+
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
