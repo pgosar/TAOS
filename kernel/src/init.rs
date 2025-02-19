@@ -52,8 +52,8 @@ pub fn init() -> u32 {
     idt::enable();
 
     unsafe {
-        // let pid = create_process(BINARY);    
-        // schedule(bsp_id, run_process_ring3(pid), 0, pid);
+        let pid = create_process(SYSCALL_BINARY);    
+        schedule(bsp_id, run_process_ring3(pid), 0, pid);
 
         let pid2 = create_process(SYSCALL_BINARY);    
         schedule(bsp_id, run_process_ring3(pid2), 0, pid2);

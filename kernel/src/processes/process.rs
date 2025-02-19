@@ -204,7 +204,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             in("r8")  &(*process).kernel_rsp,
             in("r9") return_process,
 
-            in("r10") &(*process).state
+            //TODO r10 is not a parameter register by default
+            in("r10") &(*process).state 
         );
     }
 }
@@ -245,7 +246,7 @@ unsafe fn call_process() {
         "mov rax, [rdi + 128]",
         "push rax", //rip
 
-        "mov r12, 2",
+        "mov r12, 2",     //ProcessState::Running
         "mov [r10], r12", //set state to running
 
         // Restore all registers before entering process
