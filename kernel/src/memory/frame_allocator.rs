@@ -1,6 +1,6 @@
 use crate::memory::bitmap_frame_allocator::BitmapFrameAllocator;
 use crate::memory::boot_frame_allocator::BootIntoFrameAllocator;
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 

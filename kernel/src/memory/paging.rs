@@ -1,15 +1,14 @@
 use x86_64::{
     structures::paging::{
-        mapper::CleanUp, FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable,
-        PageTableFlags, PhysFrame, Size4KiB,
+        FrameDeallocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
+        Size4KiB,
     },
     VirtAddr,
 };
 
 use crate::{
-    constants::memory::{EPHEMERAL_KERNEL_MAPPINGS_START, HEAP_START},
-    memory::frame_allocator::with_generic_allocator,
-    serial_println,
+    constants::memory::EPHEMERAL_KERNEL_MAPPINGS_START,
+    memory::frame_allocator::with_generic_allocator, serial_println,
 };
 use crate::{
     memory::{

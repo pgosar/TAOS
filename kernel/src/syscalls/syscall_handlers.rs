@@ -1,10 +1,7 @@
 use crate::{
     constants::syscalls::SYSCALL_EXIT,
     events::{current_running_event_info, EventInfo},
-    memory::{
-        frame_allocator::{with_bitmap_frame_allocator, GlobalFrameAllocator, FRAME_ALLOCATOR},
-        paging::clear_process_frames,
-    },
+    memory::{frame_allocator::with_bitmap_frame_allocator, paging::clear_process_frames},
     processes::process::{ProcessState, PROCESS_TABLE},
     serial_println,
 };
