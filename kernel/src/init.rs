@@ -58,14 +58,6 @@ pub fn init() -> u32 {
     register_event_runner(bsp_id);
     idt::enable();
 
-    unsafe {
-        serial_println!("Current CPU ID {}", bsp_id);
-        let pid = create_process(BINARY);
-        schedule(bsp_id, run_process_ring3(pid), 0, pid);
-
-        print_process_table(&PROCESS_TABLE);
-    };
-
     bsp_id
 }
 
