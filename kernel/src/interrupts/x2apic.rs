@@ -185,6 +185,10 @@ impl X2ApicManager {
         Ok(())
     }
 
+    /// Initializes x2APIC for the Bootstrap Processor (BSP)
+    ///
+    /// # Arguments
+    /// * `hz` - Desired timer frequency in Hertz
     pub fn bsp_init(hz: u32) -> Result<(), X2ApicError> {
         // First calibrate the timer
         let count = Self::calibrate_timer(hz)?;
@@ -211,7 +215,6 @@ pub struct X2Apic {
     enabled: bool,
 }
 
-// ASKDJLAJD : does each CPU initialize itself? @Anoop
 impl X2Apic {
     /// Creates a new x2APIC instance if supported by the CPU
     fn new() -> Result<Self, X2ApicError> {
@@ -348,6 +351,7 @@ pub fn send_ipi(target_id: u32, vector: u8) {
     X2ApicManager::send_ipi(target_id, vector).expect("Failed sending IPI");
 }
 
+/// Mask the APIC timer
 #[inline(always)]
 pub fn mask_timer() {
     X2ApicManager::mask_timer().expect("Failed to mask timer");
