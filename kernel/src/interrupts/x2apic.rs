@@ -6,12 +6,10 @@
 //! - Timer masking/unmasking
 //! - End-of-interrupt (EOI) handling
 
-use crate::constants::idt::TIMER_VECTOR;
-use crate::constants::MAX_CORES;
+use crate::constants::{idt::TIMER_VECTOR, MAX_CORES};
 use core::sync::atomic::{AtomicU32, Ordering};
 use raw_cpuid::CpuId;
-use x86_64::instructions::port::Port;
-use x86_64::registers::model_specific::Msr;
+use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 
 /// MSR register addresses for x2APIC control
 const IA32_APIC_BASE_MSR: u32 = 0x1B;

@@ -1,8 +1,7 @@
 //! FAT16 filesystem implementation
 
 use super::*;
-use alloc::collections::BinaryHeap;
-use alloc::vec;
+use alloc::{collections::BinaryHeap, vec};
 use core::cmp::{max, min};
 
 mod boot_sector;
