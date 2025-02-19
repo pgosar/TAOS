@@ -10,13 +10,10 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::BINARY,
     debug, devices,
-    events::{register_event_runner, run_loop, schedule},
+    events::{register_event_runner, run_loop},
     interrupts::{self, idt},
-    logging, memory,
-    processes::process::{create_process, run_process_ring3},
-    trace,
+    logging, memory, trace,
 };
 
 extern crate alloc;
