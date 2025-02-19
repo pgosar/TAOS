@@ -4,7 +4,11 @@ use crate::{
     interrupts::gdt,
     memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
     processes::{loader::load_elf, registers::Registers},
+<<<<<<< HEAD
     serial_println,
+=======
+    restore_registers_into_stack, serial_println,
+>>>>>>> main
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
@@ -188,6 +192,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // Stack layout to move into user mode
     unsafe {
+        restore_registers_into_stack!(registers);
+
         asm!(
             "push rax",
             "push rcx",
