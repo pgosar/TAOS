@@ -4,7 +4,7 @@ use crate::interrupts::gdt;
 use crate::memory::frame_allocator::alloc_frame;
 use crate::memory::{HHDM_OFFSET, MAPPER};
 use crate::processes::{loader::load_elf, registers::Registers};
-use crate::{restore_registers, serial_println};
+use crate::{restore_registers_into_stack, serial_println};
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
@@ -156,8 +156,10 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 /// # Safety
 ///
 /// TODO
+#[no_mangle]
 pub async unsafe fn run_process_ring3(pid: u32) {
     interrupts::disable();
+    
     serial_println!("RUNNING PROCESS");
     let process = {
         let process_table = PROCESS_TABLE.read();
@@ -181,49 +183,59 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     let registers = &(*process).registers.clone();
 
-    restore_registers!(registers);
-
     // Stack layout to move into user mode
     unsafe {
-        asm!(
-            "clc",
-            "push rax",
-            "jmp 2f",
-            "4:",
+        restore_registers_into_stack!(registers);
 
-            "mov [{pcb_pc}], rax",
-            "mov rax, rsp",
-            "mov [{pcb_rsp}], rax",
-            "pop rax",
+        asm!(
+            "lea r10, [rip + 0x34]", 
+            // TODO right now, this constant needs to change with every change to the below code
+
+            "mov [rsi], r10",  // RIP in R10, store
+
+            "mov r11, rsp",         // Move RSP to R10
+            "mov [r9], r11", // store RSP (from R11)
 
             // Needed for cross-privilege iretq
-            "push {ss}",
-            "push {userrsp}",
-            "push {rflags}",
-            "push {cs}",
-            "push {rip}",
+            "push r8",        //ss
+            "push rcx",       //userrsp
+            "push rax",       //rflags
+            "push rdi",       //cs
+            "push rdx",       //rip
 
-            "sti",
-
-            "iretq",
-            // will store program counter to return back to scheduling code
-            "2:",
-            "call 3f",
-            "3:",
+            // Restore all registers before entering process
+            "sub rsp, 144",
             "pop rax",
-            "jb 5f",
-            "jae 4b",
-            "5:",
+            "pop rbx",
+            "pop rcx",
+            "pop rdx",
+            "pop rsi",
+            "pop rdi",
+            "pop r8",
+            "pop r9",
+            "pop r10",
+            "pop r11",
+            "pop r12",
+            "pop r13",
+            "pop r14",
+            "pop r15",
+            "pop rbp",
+            "add rsp, 24",
 
-            ss = in(reg) user_ds,
-            userrsp = in(reg) registers.rsp,
-            rflags = in(reg) registers.rflags,
-            cs = in(reg) user_cs,
-            rip = in(reg) registers.rip,
+            "sti",      //re-enable interrupts
 
-            pcb_pc = in(reg) &(*process).kernel_rip,
-            pcb_rsp = in(reg) &(*process).kernel_rsp,
-            out("rax") _
+            "iretq",    // call process
+            "cli",
+
+            in("r8") user_ds,
+            in("rcx") registers.rsp,
+            in("rax") registers.rflags,
+            in("rdi") user_cs,
+            in("rdx") registers.rip,
+
+            in("rsi") &(*process).kernel_rip,
+            in("r9") &(*process).kernel_rsp,
+            options(nostack)
         );
     }
 
@@ -231,4 +243,5 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // The address of this will be program counter from the iretq instruction in the load registers macro
     // return Poll::Ready(())
     serial_println!("Returned from process");
+    serial_println!("Process: {:#x?}", *process);
 }

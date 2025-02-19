@@ -260,7 +260,6 @@ fn timer_handler(rsp: u64) {
         core::arch::asm!(
             "mov rsp, {0}",
             "push {1}",
-            "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
             "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
