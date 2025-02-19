@@ -10,10 +10,14 @@ use limine::{
 };
 
 use crate::{
+    constants::processes::BINARY,
     debug, devices,
-    events::{register_event_runner, run_loop},
+    events::{register_event_runner, run_loop, schedule},
     interrupts::{self, idt},
-    logging, memory, trace,
+    logging,
+    memory::{self},
+    processes::process::{create_process, print_process_table, run_process_ring3, PROCESS_TABLE},
+    serial_println, trace,
 };
 
 extern crate alloc;
@@ -53,6 +57,13 @@ pub fn init() -> u32 {
 
     register_event_runner(bsp_id);
     idt::enable();
+
+    unsafe {
+        serial_println!("Current CPU ID {}", 1);
+        let pid = create_process(BINARY);
+        print_process_table(&PROCESS_TABLE);
+        schedule(1, run_process_ring3(pid), 0, pid)
+    };
 
     bsp_id
 }

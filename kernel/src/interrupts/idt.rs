@@ -38,7 +38,8 @@ lazy_static! {
                 .set_handler_fn(double_fault_handler)
                 .set_stack_index(0);
         }
-        idt[TIMER_VECTOR].set_handler_fn(timer_handler);
+        idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
+
         idt[SYSCALL_HANDLER]
             .set_handler_fn(syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
@@ -137,19 +138,72 @@ extern "x86-interrupt" fn page_fault_handler(
     panic!("PAGE FAULT!");
 }
 
-extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
-    let rsp: usize;
+#[no_mangle]
+extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
     unsafe {
+        // I believe we need to save registers
         core::arch::asm!(
-            "mov {}, rsp",
-            out(reg) rsp
+            "push rax",
+            "call dispatch_syscall",
+            "pop rax",
+            "iretq",
+            options(noreturn)
         );
     }
+}
 
-    let mut regs = unsafe {
-        // RSP, RIP, and RFLAGS are saved by the interrupt stack frame
-        //num registers 15
-        let stack_ptr = (rsp as *const u64).byte_offset(1392);
+#[naked]
+#[allow(undefined_naked_function_abi)]
+extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            push rbp
+            push r15
+            push r14
+            push r13
+            push r12
+            push r11
+            push r10
+            push r9
+            push r8
+            push rdi
+            push rsi
+            push rdx
+            push rcx
+            push rbx
+            push rax
+
+            cld
+            mov	rdi, rsp
+            call timer_handler
+
+            pop rax
+            pop rbx
+            pop rcx
+            pop rdx
+            pop rsi
+            pop rdi
+            pop r8
+            pop r9
+            pop r10
+            pop r11
+            pop r12
+            pop r13
+            pop r14
+            pop r15
+            pop rbp
+            iretq
+      "
+        );
+    }
+}
+
+#[no_mangle]
+fn timer_handler(rsp: u64) {
+    let regs = unsafe {
+        let stack_ptr: *const u64 = rsp as *const u64;
+
         Registers {
             rax: *stack_ptr.add(0),
             rbx: *stack_ptr.add(1),
@@ -167,9 +221,9 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
             r15: *stack_ptr.add(13),
             rbp: *stack_ptr.add(14),
             // saved from interrupt stack frame
-            rsp: 0,
-            rip: 0,
-            rflags: 0,
+            rsp: *stack_ptr.add(18),
+            rip: *stack_ptr.add(15),
+            rflags: *stack_ptr.add(17),
         }
     };
     let cpuid: u32 = x2apic::current_core_id() as u32;
@@ -178,10 +232,6 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
         x2apic::send_eoi();
         return;
     }
-
-    regs.rip = stack_frame.instruction_pointer.as_u64();
-    regs.rsp = stack_frame.stack_pointer.as_u64();
-    regs.rflags = stack_frame.cpu_flags.bits();
 
     // // Get PCB from PID
     let preemption_info = unsafe {
@@ -216,23 +266,9 @@ extern "x86-interrupt" fn timer_handler(stack_frame: InterruptStackFrame) {
         core::arch::asm!(
             "mov rsp, {0}",
             "push {1}",
-            "stc",          // Use carry flag as sentinel to run_process that we're pre-empting
             "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
         );
-    }
-}
-
-extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
-    unsafe {
-        // I believe we need to save registers
-        core::arch::asm!(
-            "push rax",
-            "call dispatch_syscall",
-            "pop rax",
-            "iretq",
-            options(noreturn)
-        )
     }
 }
