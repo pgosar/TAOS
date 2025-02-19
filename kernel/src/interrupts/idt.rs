@@ -1,4 +1,4 @@
-//! Interrupt handling and management.
+//! - Interrupt Descriptor Table (IDT) setup
 //!
 //! This module provides:
 //! - Interrupt Descriptor Table (IDT) setup
@@ -6,17 +6,21 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-use alloc::sync::Arc;
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
 
+use alloc::sync::Arc;
+
 use crate::{
-    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR},
+    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
     events::{current_running_event_info, schedule, EventInfo},
-    interrupts::x2apic,
+    interrupts::{
+        x2apic,
+        x2apic::{current_core_id, TLB_SHOOTDOWN_ADDR},
+    },
     prelude::*,
     processes::{
         process::{run_process_ring3, ProcessState, PROCESS_TABLE},
@@ -39,10 +43,10 @@ lazy_static! {
                 .set_stack_index(0);
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
-
         idt[SYSCALL_HANDLER]
             .set_handler_fn(syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
+        idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
     };
 }
@@ -271,4 +275,22 @@ fn timer_handler(rsp: u64) {
             in(reg) preemption_info.1
         );
     }
+}
+
+// TODO Technically, this design means that when TLB Shootdows happen, each core must sequentially
+// invalidate its TLB rather than doing this in parallel. While this is slow, this is of low
+// priority to fix
+extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
+    let core = current_core_id();
+    {
+        let mut addresses = TLB_SHOOTDOWN_ADDR.lock();
+        let vaddr_to_invalidate = addresses[core];
+        if vaddr_to_invalidate != 0 {
+            unsafe {
+                core::arch::asm!("invlpg [{}]", in (reg) vaddr_to_invalidate, options(nostack, preserves_flags));
+            }
+            addresses[core] = 0;
+        }
+    }
+    x2apic::send_eoi();
 }
