@@ -146,7 +146,7 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
                 self.set_bit(self.to_allocate);
                 let addr = self.to_allocate * FRAME_SIZE;
                 self.to_allocate = (self.to_allocate + 1) % self.total_frames;
-                return Some(PhysAddr::new(addr as u64));
+                return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
             }
 
             self.to_allocate = (self.to_allocate + 1) % self.total_frames;
