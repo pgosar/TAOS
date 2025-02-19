@@ -165,7 +165,6 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 pub async unsafe fn run_process_ring3(pid: u32) {
     interrupts::disable();
 
-    serial_println!("RUNNING PROCESS");
     let process = {
         let process_table = PROCESS_TABLE.read();
         let process = process_table
@@ -179,14 +178,14 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // But not TCB
     let process = process.pcb.get();
 
-    (*process).state = ProcessState::Running;
-
     Cr3::write((*process).pml4_frame, Cr3Flags::empty());
 
     let user_cs = gdt::GDT.1.user_code_selector.0 as u64;
     let user_ds = gdt::GDT.1.user_data_selector.0 as u64;
 
     let registers = &(*process).registers.clone();
+
+    // (*process).state = ProcessState::Running;
 
     // Stack layout to move into user mode
     unsafe {
@@ -204,6 +203,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             in("rcx") &(*process).kernel_rip,
             in("r8")  &(*process).kernel_rsp,
             in("r9") return_process,
+
+            in("r10") &(*process).state
         );
     }
 }
@@ -233,6 +234,7 @@ unsafe fn call_process() {
         "mov [rcx], r9", // Return RIP in R9, store
         "mov r11, rsp",  // Move RSP to R11
         "mov [r8], r11", // store RSP (from R11)
+
         // Needed for cross-privilege iretq
         "push rsi", //ss
         "mov rax, [rdi + 120]",
@@ -242,6 +244,10 @@ unsafe fn call_process() {
         "push rdx", //cs
         "mov rax, [rdi + 128]",
         "push rax", //rip
+
+        "mov r12, 2",
+        "mov [r10], r12", //set state to running
+
         // Restore all registers before entering process
         "mov rax, [rdi]",
         "mov rbx, [rdi+8]",
@@ -258,6 +264,7 @@ unsafe fn call_process() {
         "mov r15, [rdi+104]",
         "mov rbp, [rdi+112]",
         "mov rdi, [rdi+40]",
+
         "sti",   //enable interrupts
         "iretq", // call process
     );

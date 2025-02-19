@@ -146,10 +146,10 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
             "push rax",
             "call dispatch_syscall",
             "pop rax",
-            "iretq",
-            options(noreturn)
         );
     }
+
+    x2apic::send_eoi();
 }
 
 #[naked]
@@ -200,7 +200,7 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 }
 
 #[no_mangle]
-fn timer_handler(rsp: u64) {
+extern "C" fn timer_handler(rsp: u64) {
     let regs = unsafe {
         let stack_ptr: *const u64 = rsp as *const u64;
 
@@ -226,9 +226,11 @@ fn timer_handler(rsp: u64) {
             rflags: *stack_ptr.add(17),
         }
     };
+
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     if event.pid == 0 {
+        // serial_println!("Kernel interrupt on {}", cpuid);
         x2apic::send_eoi();
         return;
     }
@@ -242,13 +244,19 @@ fn timer_handler(rsp: u64) {
 
         let pcb = process.pcb.get();
 
+        if (*pcb).state != ProcessState::Running {
+            // serial_println!("Kernel interrupt on {}, pid: {}", cpuid, event.pid);
+            x2apic::send_eoi();
+            return;
+        }
+
         // save registers to the PCB
         (*pcb).registers = Arc::new(regs);
 
         (*pcb).state = ProcessState::Blocked;
 
-        serial_println!("PCB: {:#X?}", *pcb);
-        serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
+        // serial_println!("PCB: {:#X?}", *pcb);
+        // serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 

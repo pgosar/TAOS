@@ -105,8 +105,11 @@ impl EventRunner {
             ));
 
             self.event_queues[priority_level].push(arc.clone());
+
             let mut write_lock = self.pending_events.write();
+
             write_lock.insert(arc.eid.0);
+
         }
     }
 
