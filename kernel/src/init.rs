@@ -59,10 +59,11 @@ pub fn init() -> u32 {
     idt::enable();
 
     unsafe {
-        serial_println!("Current CPU ID {}", 1);
+        serial_println!("Current CPU ID {}", bsp_id);
         let pid = create_process(BINARY);
+        schedule(bsp_id, run_process_ring3(pid), 0, pid);
+
         print_process_table(&PROCESS_TABLE);
-        schedule(1, run_process_ring3(pid), 0, pid)
     };
 
     bsp_id

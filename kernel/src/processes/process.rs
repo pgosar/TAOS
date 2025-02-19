@@ -200,7 +200,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             in("rsi") user_ds,
             in("rdx") user_cs,
             in("rcx") &(*process).kernel_rip,
-            in("r8")  &(*process).kernel_rsp
+            in("r8")  &(*process).kernel_rsp,
+            in("r9") return_process,
         );
     }
 }
@@ -208,8 +209,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 #[naked]
 #[allow(undefined_naked_function_abi)]
 #[no_mangle]
-// unsafe extern "C" fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64, 
-//                        kernel_rip: *const u64, kernel_rsp: *const u64) {
+// unsafe fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64, 
+//                        kernel_rip: *const u64, kernel_rsp: *const u64, return_ins: *fn) {
 unsafe fn call_process() {
     naked_asm!(
         //save callee-saved registers
@@ -227,10 +228,8 @@ unsafe fn call_process() {
         push rsi
         push rbx
         ",
-        "lea r10, [rip + 0x5E]",
-        // TODO right now, this constant needs to change with every change to the below code
 
-        "mov [rcx], r10",  // RIP in R10, store
+        "mov [rcx], r9",   // Return RIP in R9, store
         "mov r11, rsp",    // Move RSP to R11
         "mov [r8], r11",   // store RSP (from R11)
 
@@ -243,8 +242,6 @@ unsafe fn call_process() {
         "push rdx",     //cs
         "mov rax, [rdi + 128]",
         "push rax",       //rip
-
-        //     rdi = 0xffffffff00029c20
 
         // Restore all registers before entering process
         "mov rax, [rdi]",
@@ -268,7 +265,14 @@ unsafe fn call_process() {
         "sti",      //enable interrupts
 
         "iretq",    // call process
+    );
+}
 
+#[naked]
+#[allow(undefined_naked_function_abi)]
+#[no_mangle]
+unsafe fn return_process() {
+    naked_asm!(
         "cli",      //disable interrupts
                     //restore callee-saved registers
         "
@@ -285,6 +289,6 @@ unsafe fn call_process() {
         pop r15
         pop rbp
         ",
-        "ret"
+        "ret",  // return to event scheduler
     );
 }
