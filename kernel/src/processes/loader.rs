@@ -38,7 +38,7 @@ pub fn load_elf(
     kernel_mapper: &mut OffsetPageTable<'static>,
 ) -> (VirtAddr, u64) {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
-    for (_, ph) in elf.program_headers.iter().enumerate() {
+    for ph in elf.program_headers.iter() {
         if ph.p_type != PT_LOAD {
             continue;
         }

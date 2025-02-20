@@ -1,10 +1,14 @@
 extern crate alloc;
 
 use crate::{
-    debug, interrupts::gdt, memory::{
+    debug,
+    interrupts::gdt,
+    memory::{
         frame_allocator::{alloc_frame, with_bitmap_frame_allocator, with_generic_allocator},
         HHDM_OFFSET, MAPPER,
-    }, processes::{loader::load_elf, registers::Registers}, serial_println
+    },
+    processes::{loader::load_elf, registers::Registers},
+    serial_println,
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
