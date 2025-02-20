@@ -4,7 +4,7 @@ use crate::{
     debug,
     interrupts::gdt,
     memory::{
-        frame_allocator::{alloc_frame, with_bitmap_frame_allocator, with_generic_allocator},
+        frame_allocator::{alloc_frame, with_generic_allocator},
         HHDM_OFFSET, MAPPER,
     },
     processes::{loader::load_elf, registers::Registers},
@@ -192,10 +192,6 @@ pub fn clear_process_frames(pcb: &mut PCB) {
         }
         unsafe { deallocator.deallocate_frame(pml4_frame) };
     });
-
-    with_bitmap_frame_allocator(|alloc| {
-        alloc.print_bitmap_free_frames();
-    });
 }
 
 /// Helper function to recursively multi level page tables
@@ -286,9 +282,13 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 #[naked]
 #[allow(undefined_naked_function_abi)]
 #[no_mangle]
-// unsafe fn call_process(registers: *const Registers, user_ds: u64, user_cs: u64,
-//                        kernel_rip: *const u64, kernel_rsp: *const u64, return_ins: *fn) {
-unsafe fn call_process() {
+unsafe fn call_process(
+    registers: *const Registers,
+    user_ds: u64,
+    user_cs: u64,
+    kernel_rsp: *const u64,
+    process_state: *const u8,
+) {
     naked_asm!(
         //save callee-saved registers
         "

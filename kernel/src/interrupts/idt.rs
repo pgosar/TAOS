@@ -152,9 +152,6 @@ extern "x86-interrupt" fn page_fault_handler(
         create_mapping(page, &mut mapper, None);
     }
 
-    // else, we panic? or smth, report some error
-
-    //panic!("PAGE FAULT!");
     panic!("PAGE FAULT!");
 }
 

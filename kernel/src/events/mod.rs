@@ -92,9 +92,6 @@ pub fn schedule_process(
     });
 }
 
-// still happens even if i lock process creation/running to only happen on cpu id 1
-// Something got messed-up in the merge fs
-// i guess you can do a diff :skull:
 pub fn register_event_runner(cpuid: u32) {
     without_interrupts(|| {
         let runner = EventRunner::init();

@@ -2,8 +2,6 @@ pub mod loader;
 pub mod process;
 pub mod registers;
 
-// Test basic remove, as removing and then translating should fail
-
 #[cfg(test)]
 mod tests {
     use crate::{
