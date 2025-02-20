@@ -10,13 +10,15 @@ impl Event {
         rewake_queue: Arc<EventQueue>,
         priority: usize,
         pid: u32,
+        scheduled_clock: u64
     ) -> Event {
         Event {
             eid: EventId::init(),
             pid: pid,
             future: Mutex::new(Box::pin(future)),
             rewake_queue: rewake_queue,
-            priority: priority,
+            priority: priority.into(),
+            scheduled_clock: scheduled_clock.into()
         }
     }
 }

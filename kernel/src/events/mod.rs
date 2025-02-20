@@ -9,7 +9,7 @@ use x86_64::instructions::interrupts::without_interrupts;
 use core::{
     future::Future,
     pin::Pin,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
 
@@ -42,7 +42,8 @@ struct Event {
     pid: u32,
     future: SendFuture,
     rewake_queue: Arc<EventQueue>,
-    priority: usize,
+    priority: AtomicUsize,
+    scheduled_clock: AtomicU64
 }
 
 // Schedules and runs events within a single core
@@ -51,6 +52,7 @@ struct EventRunner {
     rewake_queue: Arc<EventQueue>,
     pending_events: RwLock<BTreeSet<u64>>,
     current_event: Option<Arc<Event>>,
+    clock: u64
 }
 
 // Global mapping of cores to events
@@ -87,7 +89,7 @@ pub fn schedule_process(
         let runners = EVENT_RUNNERS.read();
         let mut runner = runners.get(&cpuid).expect("No runner found").write();
     
-        runner.schedule(future, NUM_EVENT_PRIORITIES/2, pid);
+        runner.schedule(future, NUM_EVENT_PRIORITIES-1, pid);
     });
 }
 
@@ -118,7 +120,7 @@ pub fn current_running_event_priority(cpuid: u32) -> usize {
     let runner = runners.get(&cpuid).expect("No runner found").write();
 
     match runner.current_running_event() {
-        Some(e) => e.priority,
+        Some(e) => e.priority.load(Ordering::Relaxed),
         None => NUM_EVENT_PRIORITIES - 1,
     }
 }
@@ -138,7 +140,7 @@ pub fn current_running_event_info(cpuid: u32) -> EventInfo {
 
     match runner.current_running_event() {
         Some(e) => EventInfo {
-            priority: e.priority,
+            priority: e.priority.load(Ordering::Relaxed),
             pid: e.pid,
         },
         None => EventInfo {
