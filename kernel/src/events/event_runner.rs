@@ -98,16 +98,12 @@ impl EventRunner {
         if priority_level >= NUM_EVENT_PRIORITIES {
             panic!("Invalid event priority: {}", priority_level);
         } else {
-            // serial_println!("Scheduling");
-
             let arc = Arc::new(Event::init(
                 future,
                 self.rewake_queue.clone(),
                 priority_level,
                 pid,
             ));
-
-            // serial_println!("Enqueueing");
 
             self.event_queues[priority_level].push(arc.clone());
 
