@@ -37,7 +37,7 @@ pub struct PCB {
     pub state: ProcessState,
     pub kernel_rsp: u64,
     pub kernel_rip: u64,
-    pub registers: Arc<Registers>,
+    pub registers: Registers,
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
 
@@ -100,7 +100,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
         state: ProcessState::New,
         kernel_rsp: 0,
         kernel_rip: 0,
-        registers: Arc::new(Registers {
+        registers: Registers {
             rax: 0,
             rbx: 0,
             rcx: 0,
@@ -119,7 +119,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
             rsp: stack_top.as_u64(),
             rip: entry_point,
             rflags: 0x202,
-        }),
+        },
         pml4_frame: process_pml4_frame,
     }));
     let pid = unsafe { (*process.pcb.get()).pid };
@@ -187,6 +187,13 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     // (*process).state = ProcessState::Running;
 
+    let rsp: usize;
+    core::arch::asm!(
+        "mov {}, rsp",
+        out(reg) rsp
+    );
+    serial_println!("RSP in run_process: {:#x}", rsp);
+
     // Stack layout to move into user mode
     unsafe {
         asm!(
@@ -197,7 +204,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             "pop rdx",
             "pop rcx",
             "pop rax",
-            in("rdi") registers.as_ref() as *const Registers,
+            in("rdi") registers as *const Registers,
             in("rsi") user_ds,
             in("rdx") user_cs,
             in("rcx") &(*process).kernel_rip,

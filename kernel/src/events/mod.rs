@@ -14,7 +14,7 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::constants::events::NUM_EVENT_PRIORITIES;
+use crate::{constants::events::NUM_EVENT_PRIORITIES, serial_println};
 
 mod event;
 mod event_runner;

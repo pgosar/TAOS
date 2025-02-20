@@ -6,13 +6,15 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
+use core::arch::asm;
+
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 
 use crate::{
     constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
@@ -153,6 +155,15 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
         );
     }
 
+    let rsp2: u64;
+    unsafe {
+        asm!(
+            "mov {}, rsp",
+            out(reg) rsp2
+        );
+    };
+    serial_println!("RSP in syscall: {:#x}", rsp2);
+
     x2apic::send_eoi();
 }
 
@@ -205,41 +216,22 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 
 #[no_mangle]
 extern "C" fn timer_handler(rsp: u64) {
-    let regs = unsafe {
-        let stack_ptr: *const u64 = rsp as *const u64;
-
-        Registers {
-            rax: *stack_ptr.add(0),
-            rbx: *stack_ptr.add(1),
-            rcx: *stack_ptr.add(2),
-            rdx: *stack_ptr.add(3),
-            rsi: *stack_ptr.add(4),
-            rdi: *stack_ptr.add(5),
-            r8: *stack_ptr.add(6),
-            r9: *stack_ptr.add(7),
-            r10: *stack_ptr.add(8),
-            r11: *stack_ptr.add(9),
-            r12: *stack_ptr.add(10),
-            r13: *stack_ptr.add(11),
-            r14: *stack_ptr.add(12),
-            r15: *stack_ptr.add(13),
-            rbp: *stack_ptr.add(14),
-            // saved from interrupt stack frame
-            rsp: *stack_ptr.add(18),
-            rip: *stack_ptr.add(15),
-            rflags: *stack_ptr.add(17),
-        }
+    let rsp2: u64;
+    unsafe {
+        asm!(
+            "mov {}, rsp",
+            out(reg) rsp2
+        );
     };
 
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     if event.pid == 0 {
-        // serial_println!("Kernel interrupt on {}", cpuid);
         x2apic::send_eoi();
         return;
     }
 
-    // // Get PCB from PID
+    // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
         let process = process_table
@@ -249,28 +241,51 @@ extern "C" fn timer_handler(rsp: u64) {
         let pcb = process.pcb.get();
 
         if (*pcb).state != ProcessState::Running {
-            // serial_println!("Kernel interrupt on {}, pid: {}", cpuid, event.pid);
             x2apic::send_eoi();
             return;
         }
 
         // save registers to the PCB
-        (*pcb).registers = Arc::new(regs);
+        let stack_ptr: *const u64 = rsp as *const u64;
+
+        (*pcb).registers.rax = *stack_ptr.add(0);
+        (*pcb).registers.rbx = *stack_ptr.add(1);
+        (*pcb).registers.rcx = *stack_ptr.add(2);
+        (*pcb).registers.rdx = *stack_ptr.add(3);
+        (*pcb).registers.rsi = *stack_ptr.add(4);
+        (*pcb).registers.rdi = *stack_ptr.add(5);
+        (*pcb).registers.r8  = *stack_ptr.add(6);
+        (*pcb).registers.r9  = *stack_ptr.add(7);
+        (*pcb).registers.r10 = *stack_ptr.add(8);
+        (*pcb).registers.r11 = *stack_ptr.add(9);
+        (*pcb).registers.r12 = *stack_ptr.add(10);
+        (*pcb).registers.r13 = *stack_ptr.add(11);
+        (*pcb).registers.r14 = *stack_ptr.add(12);
+        (*pcb).registers.r15 = *stack_ptr.add(13);
+        (*pcb).registers.rbp = *stack_ptr.add(14);
+        // saved from interrupt stack frame
+        (*pcb).registers.rsp = *stack_ptr.add(18);
+        (*pcb).registers.rip = *stack_ptr.add(15);
+        (*pcb).registers.rflags = *stack_ptr.add(17);
 
         (*pcb).state = ProcessState::Blocked;
 
-        // serial_println!("PCB: {:#X?}", *pcb);
-        // serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 
     unsafe {
+        serial_println!("Timer INT. RSP: {:#x} vs RSP?: {:#x}", rsp, rsp2);
+        let y = Box::new(17);
+        serial_println!("INT Malloc @ {:p}", y);
+
         schedule(
             cpuid,
             run_process_ring3(event.pid),
             event.priority,
             event.pid,
         );
+
+        serial_println!("RSP {:#x} -> {:#x}", rsp, preemption_info.0);
 
         x2apic::send_eoi();
 
