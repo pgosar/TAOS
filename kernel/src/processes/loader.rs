@@ -7,7 +7,6 @@ use crate::{
         frame_allocator::with_generic_allocator,
         paging::{create_mapping, update_permissions},
     },
-    serial_println,
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};
 use goblin::{
@@ -39,8 +38,7 @@ pub fn load_elf(
     kernel_mapper: &mut OffsetPageTable<'static>,
 ) -> (VirtAddr, u64) {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
-    serial_println!("ELF parsed, entry = 0x{:x}", elf.header.e_entry);
-    for (i, ph) in elf.program_headers.iter().enumerate() {
+    for (_, ph) in elf.program_headers.iter().enumerate() {
         if ph.p_type != PT_LOAD {
             continue;
         }
@@ -49,15 +47,6 @@ pub fn load_elf(
         let mem_size = ph.p_memsz as usize;
         let file_size = ph.p_filesz as usize;
         let offset = ph.p_offset as usize;
-
-        serial_println!(
-            "Segment {}: vaddr=0x{:x}, mem_size={}, file_size={}, offset=0x{:x}",
-            i,
-            ph.p_vaddr,
-            mem_size,
-            file_size,
-            offset
-        );
 
         let start_page = Page::containing_address(virt_addr);
         let end_page = Page::containing_address(virt_addr + (mem_size - 1) as u64);
@@ -108,7 +97,6 @@ pub fn load_elf(
             if (ph.p_flags & PF_X) == 0 {
                 flags |= PageTableFlags::NO_EXECUTE;
             }
-            serial_println!("Flags: {:?}", flags);
             update_permissions(page, user_mapper, flags);
 
             let unmap_page: Page<Size4KiB> = Page::containing_address(kernel_alias);
@@ -123,8 +111,6 @@ pub fn load_elf(
 
             update_permissions(page, user_mapper, flags);
         }
-
-        serial_println!("Segment {} loaded successfully.", i);
     }
 
     // Map user stack
@@ -133,20 +119,12 @@ pub fn load_elf(
     let start_page = Page::containing_address(stack_start);
     let end_page = Page::containing_address(stack_end);
 
-    serial_println!(
-        "Mapping user stack at [0x{:x}..0x{:x})",
-        stack_start.as_u64(),
-        stack_end.as_u64()
-    );
-
     let stack_flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
 
     for page in Page::range_inclusive(start_page, end_page) {
         create_mapping(page, user_mapper, Some(stack_flags));
     }
-
-    serial_println!("User stack mapped.  SP=0x{:x}", stack_end.as_u64());
 
     (stack_end, elf.header.e_entry)
 }

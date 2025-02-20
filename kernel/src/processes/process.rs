@@ -1,13 +1,10 @@
 extern crate alloc;
 
 use crate::{
-    interrupts::gdt,
-    memory::{
+    debug, interrupts::gdt, memory::{
         frame_allocator::{alloc_frame, with_bitmap_frame_allocator, with_generic_allocator},
         HHDM_OFFSET, MAPPER,
-    },
-    processes::{loader::load_elf, registers::Registers},
-    serial_println,
+    }, processes::{loader::load_elf, registers::Registers}, serial_println
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
@@ -143,7 +140,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
     }));
     let pid = unsafe { (*process.pcb.get()).pid };
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
-    serial_println!("Created process with PID: {}", pid);
+    debug!("Created process with PID: {}", pid);
     // schedule process (call from main)
     pid
 }
