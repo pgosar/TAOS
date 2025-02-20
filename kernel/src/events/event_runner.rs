@@ -26,7 +26,8 @@ impl EventRunner {
             rewake_queue: Arc::new(RwLock::new(VecDeque::new())),
             pending_events: RwLock::new(BTreeSet::new()),
             current_event: None,
-            clock: 0,
+            event_clock: 0,
+            system_clock: 0
         }
     }
 
@@ -45,7 +46,7 @@ impl EventRunner {
                     .expect("Have pending events, but empty waiting queues.");
 
                 if self.contains_event(event.eid) {
-                    self.clock += 1;
+                    self.event_clock += 1;
 
                     let waker = waker_ref(event);
                     let mut context: Context<'_> = Context::from_waker(&waker);
@@ -58,6 +59,8 @@ impl EventRunner {
 
                     if !ready {
                         let priority = event.priority.load(Ordering::Relaxed);
+
+                        event.scheduled_timestamp.swap(self.event_clock, Ordering::Relaxed);
                         Self::enqueue(&self.event_queues[priority], event.clone());
                     } else {
                         let mut write_lock = self.pending_events.write();
@@ -89,7 +92,7 @@ impl EventRunner {
                 self.rewake_queue.clone(),
                 priority_level,
                 pid,
-                self.clock,
+                self.event_clock,
             ));
 
             Self::enqueue(&self.event_queues[priority_level], event.clone());
@@ -104,6 +107,10 @@ impl EventRunner {
         self.current_event.as_ref()
     }
 
+    pub fn inc_system_clock(&mut self) {
+        self.system_clock += 1;
+    }
+
     fn have_pending_events(&self) -> bool {
         self.pending_events.read().is_empty()
     }
@@ -112,11 +119,11 @@ impl EventRunner {
         self.pending_events.read().contains(&eid.0)
     }
 
-    fn front_clock(queue: &EventQueue) -> Option<u64> {
+    fn front_timestamp(queue: &EventQueue) -> Option<u64> {
         queue
             .read()
             .front()
-            .map(|e| e.scheduled_clock.load(Ordering::Relaxed))
+            .map(|e| e.scheduled_timestamp.load(Ordering::Relaxed))
     }
 
     fn try_pop(queue: &EventQueue) -> Option<Arc<Event>> {
@@ -129,17 +136,17 @@ impl EventRunner {
 
     fn reprioritize(&mut self) {
         for i in 1..NUM_EVENT_PRIORITIES {
-            let scheduled_clock = Self::front_clock(&self.event_queues[i]);
+            let scheduled_clock = Self::front_timestamp(&self.event_queues[i]);
 
             scheduled_clock.inspect(|event_scheduled_at| {
-                if event_scheduled_at + PRIORITY_INC_DELAY <= self.clock {
+                if event_scheduled_at + PRIORITY_INC_DELAY <= self.event_clock {
                     let event_to_move = Self::try_pop(&self.event_queues[i]);
                     event_to_move.inspect(|e| {
                         Self::enqueue(&self.event_queues[i - 1], e.clone());
 
                         e.priority.swap(i - 1, Ordering::Relaxed);
-                        e.scheduled_clock.swap(self.clock, Ordering::Relaxed);
-                        serial_println!("{:?} priority {} -> {} @ {}", e.eid, i, i - 1, self.clock);
+                        e.scheduled_timestamp.swap(self.event_clock, Ordering::Relaxed);
+                        serial_println!("{:?} priority {} -> {} @ {}", e.eid, i, i - 1, self.event_clock);
                     });
                 }
             });

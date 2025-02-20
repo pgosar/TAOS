@@ -42,7 +42,7 @@ struct Event {
     future: SendFuture,
     rewake_queue: Arc<EventQueue>,
     priority: AtomicUsize,
-    scheduled_clock: AtomicU64,
+    scheduled_timestamp: AtomicU64,
 }
 
 // Schedules and runs events within a single core
@@ -51,7 +51,8 @@ struct EventRunner {
     rewake_queue: Arc<EventQueue>,
     pending_events: RwLock<BTreeSet<u64>>,
     current_event: Option<Arc<Event>>,
-    clock: u64,
+    event_clock: u64,
+    system_clock: u64,
 }
 
 // Global mapping of cores to events
@@ -119,6 +120,13 @@ pub fn current_running_event_priority(cpuid: u32) -> usize {
         Some(e) => e.priority.load(Ordering::Relaxed),
         None => NUM_EVENT_PRIORITIES - 1,
     }
+}
+
+pub fn inc_runner_clock(cpuid: u32) {
+    let runners = EVENT_RUNNERS.read();
+    let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
+    runner.inc_system_clock();
 }
 
 #[derive(Debug)]

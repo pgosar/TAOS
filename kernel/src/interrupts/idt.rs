@@ -18,7 +18,7 @@ use x86_64::{
 
 use crate::{
     constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
-    events::{current_running_event_info, schedule_process, EventInfo},
+    events::{current_running_event_info, inc_runner_clock, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
     memory::{paging::create_mapping, HHDM_OFFSET},
     prelude::*,
@@ -215,6 +215,8 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 #[no_mangle]
 extern "C" fn timer_handler(rsp: u64) {
     let cpuid: u32 = x2apic::current_core_id() as u32;
+    inc_runner_clock(cpuid);
+
     let event: EventInfo = current_running_event_info(cpuid);
     if event.pid == 0 {
         x2apic::send_eoi();
