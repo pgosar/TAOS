@@ -23,10 +23,10 @@ use x86_64::{
     PrivilegeLevel, VirtAddr,
 };
 
-use crate::constants::{
+use crate::{constants::{
     gdt::{DOUBLE_FAULT_IST_INDEX, IST_STACK_SIZE, RING0_STACK_SIZE},
     MAX_CORES,
-};
+}, serial_println};
 
 /// Number of base GDT entries: null descriptor + kernel code/data + user code/data
 const BASE_ENTRIES: usize = 5;
@@ -51,9 +51,12 @@ lazy_static! {
         for (i, tss) in tsss.iter_mut().enumerate() {
             unsafe {
                 let stack_start = VirtAddr::from_ptr(&DF_STACKS[i]);
+                serial_println!("Stack start: {:#x}", stack_start);
                 let stack_end = stack_start + IST_STACK_SIZE as u64;
-                //
+
                 let priv_stack_start = VirtAddr::from_ptr(&PRIV_STACKS[i]);
+                serial_println!("Priv stack start: {:#x}", priv_stack_start);
+
                 let priv_stack_end = priv_stack_start + RING0_STACK_SIZE as u64;
 
                 tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = stack_end;

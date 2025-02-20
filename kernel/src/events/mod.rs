@@ -4,6 +4,7 @@ use alloc::{
     sync::Arc,
 };
 use spin::{mutex::Mutex, rwlock::RwLock};
+use x86_64::instructions::interrupts::without_interrupts;
 
 use core::{
     future::Future,
@@ -83,21 +84,24 @@ pub fn schedule_process(
     future: impl Future<Output = ()> + 'static + Send,
     pid: u32, // 0 as kernel/sentinel
 ) {
-    let runners = EVENT_RUNNERS.read();
-    let mut runner = runners.get(&cpuid).expect("No runner found").write();
-
-    // TODO smarter default priority?
-    runner.schedule(future, NUM_EVENT_PRIORITIES/2, pid);
+    without_interrupts(|| {
+        let runners = EVENT_RUNNERS.read();
+        let mut runner = runners.get(&cpuid).expect("No runner found").write();
+    
+        runner.schedule(future, NUM_EVENT_PRIORITIES/2, pid);
+    });
 }
 
 // still happens even if i lock process creation/running to only happen on cpu id 1
 // Something got messed-up in the merge fs
 // i guess you can do a diff :skull:
 pub fn register_event_runner(cpuid: u32) {
-    let runner = EventRunner::init();
-    let mut write_lock = EVENT_RUNNERS.write();
+    without_interrupts(|| {
+        let runner = EventRunner::init();
+        let mut write_lock = EVENT_RUNNERS.write();
 
-    write_lock.insert(cpuid, RwLock::new(runner));
+        write_lock.insert(cpuid, RwLock::new(runner));
+    });
 }
 
 pub fn current_running_event_pid(cpuid: u32) -> u32 {

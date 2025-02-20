@@ -1,4 +1,4 @@
-//! Interrupt handling and management.
+//! - Interrupt Descriptor Table (IDT) setup
 //!
 //! This module provides:
 //! - Interrupt Descriptor Table (IDT) setup
@@ -6,7 +6,7 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-use alloc::sync::Arc;
+
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
@@ -14,14 +14,11 @@ use x86_64::{
 };
 
 use crate::{
-    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR},
-    events::{current_running_event_info, schedule, EventInfo},
-    interrupts::x2apic,
+    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
+    events::{current_running_event_info, schedule_process, EventInfo},
+    interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
     prelude::*,
-    processes::{
-        process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-        registers::Registers,
-    },
+    processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
 };
 
 lazy_static! {
@@ -39,10 +36,10 @@ lazy_static! {
                 .set_stack_index(0);
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
-
         idt[SYSCALL_HANDLER]
             .set_handler_fn(syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
+        idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
     };
 }
@@ -146,10 +143,10 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
             "push rax",
             "call dispatch_syscall",
             "pop rax",
-            "iretq",
-            options(noreturn)
         );
     }
+    
+    x2apic::send_eoi();
 }
 
 #[naked]
@@ -200,32 +197,7 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 }
 
 #[no_mangle]
-fn timer_handler(rsp: u64) {
-    let regs = unsafe {
-        let stack_ptr: *const u64 = rsp as *const u64;
-
-        Registers {
-            rax: *stack_ptr.add(0),
-            rbx: *stack_ptr.add(1),
-            rcx: *stack_ptr.add(2),
-            rdx: *stack_ptr.add(3),
-            rsi: *stack_ptr.add(4),
-            rdi: *stack_ptr.add(5),
-            r8: *stack_ptr.add(6),
-            r9: *stack_ptr.add(7),
-            r10: *stack_ptr.add(8),
-            r11: *stack_ptr.add(9),
-            r12: *stack_ptr.add(10),
-            r13: *stack_ptr.add(11),
-            r14: *stack_ptr.add(12),
-            r15: *stack_ptr.add(13),
-            rbp: *stack_ptr.add(14),
-            // saved from interrupt stack frame
-            rsp: *stack_ptr.add(18),
-            rip: *stack_ptr.add(15),
-            rflags: *stack_ptr.add(17),
-        }
-    };
+extern "C" fn timer_handler(rsp: u64) {
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     if event.pid == 0 {
@@ -233,7 +205,7 @@ fn timer_handler(rsp: u64) {
         return;
     }
 
-    // // Get PCB from PID
+    // Get PCB from PID
     let preemption_info = unsafe {
         let mut process_table = PROCESS_TABLE.write();
         let process = process_table
@@ -242,33 +214,76 @@ fn timer_handler(rsp: u64) {
 
         let pcb = process.pcb.get();
 
+        if (*pcb).state != ProcessState::Running {
+            x2apic::send_eoi();
+            return;
+        }
+
         // save registers to the PCB
-        (*pcb).registers = Arc::new(regs);
+        let stack_ptr: *const u64 = rsp as *const u64;
+
+        (*pcb).registers.rax = *stack_ptr.add(0);
+        (*pcb).registers.rbx = *stack_ptr.add(1);
+        (*pcb).registers.rcx = *stack_ptr.add(2);
+        (*pcb).registers.rdx = *stack_ptr.add(3);
+        (*pcb).registers.rsi = *stack_ptr.add(4);
+        (*pcb).registers.rdi = *stack_ptr.add(5);
+        (*pcb).registers.r8  = *stack_ptr.add(6);
+        (*pcb).registers.r9  = *stack_ptr.add(7);
+        (*pcb).registers.r10 = *stack_ptr.add(8);
+        (*pcb).registers.r11 = *stack_ptr.add(9);
+        (*pcb).registers.r12 = *stack_ptr.add(10);
+        (*pcb).registers.r13 = *stack_ptr.add(11);
+        (*pcb).registers.r14 = *stack_ptr.add(12);
+        (*pcb).registers.r15 = *stack_ptr.add(13);
+        (*pcb).registers.rbp = *stack_ptr.add(14);
+        // saved from interrupt stack frame
+        (*pcb).registers.rsp = *stack_ptr.add(18);
+        (*pcb).registers.rip = *stack_ptr.add(15);
+        (*pcb).registers.rflags = *stack_ptr.add(17);
 
         (*pcb).state = ProcessState::Blocked;
 
-        serial_println!("PCB: {:#X?}", *pcb);
-        serial_println!("Returning to: {:#x}", (*pcb).kernel_rip);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 
     unsafe {
-        schedule(
-            cpuid,
-            run_process_ring3(event.pid),
-            event.priority,
-            event.pid,
+        schedule_process (
+            cpuid, 
+    run_process_ring3(event.pid), 
+            event.pid
         );
-
-        x2apic::send_eoi();
 
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
         core::arch::asm!(
             "mov rsp, {0}",
             "push {1}",
-            "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
         );
+
+        x2apic::send_eoi();
+
+        core::arch::asm!(
+            "ret"
+        );
     }
+}
+
+// TODO Technically, this design means that when TLB Shootdows happen, each core must sequentially
+// invalidate its TLB rather than doing this in parallel. While this is slow, this is of low
+// priority to fix
+extern "x86-interrupt" fn tlb_shootdown_handler(_: InterruptStackFrame) {
+    let core = current_core_id();
+    {
+        let mut addresses = TLB_SHOOTDOWN_ADDR.lock();
+        let vaddr_to_invalidate = addresses[core];
+        if vaddr_to_invalidate != 0 {
+            unsafe {
+                core::arch::asm!("invlpg [{}]", in (reg) vaddr_to_invalidate, options(nostack, preserves_flags));
+            }
+            addresses[core] = 0;
+        }
+    }
+    x2apic::send_eoi();
 }

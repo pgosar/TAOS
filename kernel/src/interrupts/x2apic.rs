@@ -9,9 +9,10 @@
 use crate::constants::{idt::TIMER_VECTOR, MAX_CORES};
 use core::sync::atomic::{AtomicU32, Ordering};
 use raw_cpuid::CpuId;
+use spin::Mutex;
 use x86_64::{instructions::port::Port, registers::model_specific::Msr};
 
-/// MSR register addresses for x2APIC control
+// MSR register constants
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const X2APIC_EOI: u32 = 0x80B;
 const X2APIC_SIVR: u32 = 0x80F;
@@ -29,7 +30,6 @@ const CHANNEL_2_PORT: u16 = 0x42;
 const COMMAND_PORT: u16 = 0x43;
 const CONTROL_PORT: u16 = 0x61;
 
-/// Errors that can occur during x2APIC operations
 #[derive(Debug)]
 pub enum X2ApicError {
     /// x2APIC feature not supported by CPU
@@ -61,6 +61,8 @@ pub enum PitError {
 static mut APIC_MANAGER: X2ApicManager = X2ApicManager::new();
 /// Stores calibrated timer count value shared between cores
 static CALIBRATED_TIMER_COUNT: AtomicU32 = AtomicU32::new(0);
+/// Global to manage what addresses to invalidate when shootdowns happen
+pub static TLB_SHOOTDOWN_ADDR: Mutex<[u64; MAX_CORES]> = Mutex::new([0; MAX_CORES]);
 
 /// Manages x2APIC instances for all CPU cores
 pub struct X2ApicManager {
@@ -103,6 +105,7 @@ impl X2ApicManager {
         unsafe {
             APIC_MANAGER.apics[id] = Some(apic);
         }
+
         Ok(())
     }
 

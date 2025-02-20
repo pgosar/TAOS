@@ -49,15 +49,6 @@ impl BootIntoFrameAllocator {
 
         let kernel_start: u64 = kernel_address_response.physical_base();
         let virtual_kernel_address: u64 = kernel_address_response.virtual_base();
-        serial_println!(
-            "Kernel physical base address: {:#X}, virtual base address: {:#X}",
-            kernel_start,
-            virtual_kernel_address
-        );
-
-        unsafe {
-            serial_println!("virtual kernel end address: {:#X}", _kernel_end);
-        }
         let kernel_end = unsafe { ((_kernel_end) - virtual_kernel_address) + kernel_start };
 
         BootIntoFrameAllocator {
