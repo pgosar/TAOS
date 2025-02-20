@@ -1,8 +1,7 @@
 use crate::{
     constants::syscalls::SYSCALL_EXIT,
     events::{current_running_event_info, EventInfo},
-    memory::frame_allocator::dealloc_frame,
-    processes::process::{ProcessState, PROCESS_TABLE},
+    processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
     serial_println,
 };
 
@@ -43,8 +42,8 @@ fn sys_exit() {
         let pcb = process.pcb.get();
 
         (*pcb).state = ProcessState::Terminated;
-        dealloc_frame((*pcb).pml4_frame);
-
+        clear_process_frames(&mut *pcb);
+        process_table.remove(&event.pid);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };
 

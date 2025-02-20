@@ -14,9 +14,10 @@ use crate::{
     memory::{
         frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
         tlb::tlb_shootdown,
-        HHDM_OFFSET,
     },
 };
+
+use super::HHDM_OFFSET;
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
 
@@ -83,7 +84,6 @@ pub fn create_mapping(
             )
             .expect("Mapping failed")
     };
-
     frame
 }
 
@@ -198,7 +198,7 @@ pub fn map_kernel_frame(
 ///
 /// # Safety
 ///
-/// TODO
+/// Updating the flags for a page may result in undefined behavior
 pub fn update_permissions(page: Page, mapper: &mut impl Mapper<Size4KiB>, flags: PageTableFlags) {
     let _ = unsafe {
         mapper

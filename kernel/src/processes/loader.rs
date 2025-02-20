@@ -3,7 +3,10 @@ use crate::{
         memory::PAGE_SIZE,
         processes::{STACK_SIZE, STACK_START},
     },
-    memory::paging::{create_mapping, update_permissions},
+    memory::{
+        frame_allocator::with_generic_allocator,
+        paging::{create_mapping, update_permissions},
+    },
     serial_println,
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};
@@ -12,13 +15,24 @@ use goblin::{
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
 };
 use x86_64::{
-    structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB},
+    structures::paging::{
+        mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB,
+    },
     VirtAddr,
 };
 
 // We import our new helper
 use crate::memory::paging::map_kernel_frame;
 
+/// Function for initializing addresss space for process using ELF executable
+///
+/// # Arguments:
+/// * 'elf_bytes' - byte stream of ELF executable to parse
+/// * 'user_mapper' - Page table for user that maps VAs from section headers to frames
+/// * 'kernel mapper' - kernel page table for mapping VAs to frames for writing ELF metadata to frames
+///
+/// # Returns:
+/// Virtual address of the top of user stack and entry point for process
 pub fn load_elf(
     elf_bytes: &[u8],
     user_mapper: &mut impl Mapper<Size4KiB>,
@@ -26,7 +40,6 @@ pub fn load_elf(
 ) -> (VirtAddr, u64) {
     let elf = Elf::parse(elf_bytes).expect("Parsing ELF failed");
     serial_println!("ELF parsed, entry = 0x{:x}", elf.header.e_entry);
-
     for (i, ph) in elf.program_headers.iter().enumerate() {
         if ph.p_type != PT_LOAD {
             continue;
@@ -50,22 +63,15 @@ pub fn load_elf(
         let end_page = Page::containing_address(virt_addr + (mem_size - 1) as u64);
 
         // Build final page flags
-        // FIXME: Update flags correctly this cant be writable by default!
         let default_flags =
             PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::WRITABLE;
-        let mut flags = default_flags;
-        if (ph.p_flags & PF_W) != 0 {
-            flags |= PageTableFlags::WRITABLE;
-        }
-        if (ph.p_flags & PF_X) == 0 {
-            flags |= PageTableFlags::NO_EXECUTE;
-        }
+        let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
 
         // For each page in [start_page..end_page], create user mapping,
         // then do a kernel alias to copy data in
         for page in Page::range_inclusive(start_page, end_page) {
             let frame = create_mapping(page, user_mapper, Some(default_flags));
-            let kernel_alias = map_kernel_frame(kernel_mapper, frame, flags);
+            let kernel_alias = map_kernel_frame(kernel_mapper, frame, default_flags);
             // now `kernel_alias` is a kernel virtual address of that same frame
 
             let page_offset =
@@ -95,6 +101,25 @@ pub fn load_elf(
                     }
                 }
             }
+
+            if (ph.p_flags & PF_W) != 0 {
+                flags |= PageTableFlags::WRITABLE;
+            }
+            if (ph.p_flags & PF_X) == 0 {
+                flags |= PageTableFlags::NO_EXECUTE;
+            }
+            serial_println!("Flags: {:?}", flags);
+            update_permissions(page, user_mapper, flags);
+
+            let unmap_page: Page<Size4KiB> = Page::containing_address(kernel_alias);
+            // unmap the frame, but do not actually deallocate it
+            // the physical frame is still used by the process in its own mapping
+            kernel_mapper
+                .unmap(unmap_page)
+                .expect("Unmapping kernel frame failed")
+                .1
+                .flush();
+            with_generic_allocator(|allocator| unsafe { kernel_mapper.clean_up(allocator) });
 
             update_permissions(page, user_mapper, flags);
         }
