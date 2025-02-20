@@ -1,8 +1,7 @@
 use crate::{
     constants::syscalls::SYSCALL_EXIT,
     events::{current_running_event_info, EventInfo},
-    memory::paging::clear_process_frames,
-    processes::process::{ProcessState, PROCESS_TABLE},
+    processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
     serial_println,
 };
 

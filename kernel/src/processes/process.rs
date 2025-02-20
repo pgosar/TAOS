@@ -2,7 +2,10 @@ extern crate alloc;
 
 use crate::{
     interrupts::gdt,
-    memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
+    memory::{
+        frame_allocator::{alloc_frame, with_bitmap_frame_allocator, with_generic_allocator},
+        HHDM_OFFSET, MAPPER,
+    },
     processes::{loader::load_elf, registers::Registers},
     restore_registers_into_stack, serial_println,
 };
@@ -14,7 +17,7 @@ use core::{
 use spin::rwlock::RwLock;
 use x86_64::{
     instructions::interrupts,
-    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB},
+    structures::paging::{FrameDeallocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB},
 };
 
 // process counter must be thread-safe
@@ -254,4 +257,65 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             options(nostack)
         );
     }
+}
+
+/// Clear the PML4 associated with the PCB
+///
+/// * `pcb`: The process PCB to clear memory for
+pub fn clear_process_frames(pcb: &mut PCB) {
+    let pml4_frame = pcb.pml4_frame;
+    let mapper = unsafe { pcb.create_mapper() };
+
+    with_generic_allocator(|deallocator| {
+        // Iterate over first 256 entries (user space)
+        for i in 0..256 {
+            let entry = &mapper.level_4_table()[i];
+            if entry.is_unused() {
+                continue;
+            }
+
+            let pdpt_frame = PhysFrame::containing_address(entry.addr());
+            unsafe {
+                free_page_table(pdpt_frame, 3, deallocator, HHDM_OFFSET.as_u64());
+            }
+        }
+        unsafe { deallocator.deallocate_frame(pml4_frame) };
+    });
+
+    with_bitmap_frame_allocator(|alloc| {
+        alloc.print_bitmap_free_frames();
+    });
+}
+
+/// Helper function to recursively multi level page tables
+///
+/// * `frame`: the current page table frame iterating over
+/// * `level`: the current level of the page table we're on
+/// * `deallocator`:
+/// * `hhdm_offset`:
+unsafe fn free_page_table(
+    frame: PhysFrame,
+    level: u8,
+    deallocator: &mut impl FrameDeallocator<Size4KiB>,
+    hhdm_offset: u64,
+) {
+    let virt = hhdm_offset + frame.start_address().as_u64();
+    let table = unsafe { &mut *(virt as *mut PageTable) };
+
+    for entry in table.iter_mut() {
+        if entry.is_unused() {
+            continue;
+        }
+
+        if level > 1 {
+            let child_frame = PhysFrame::containing_address(entry.addr());
+            free_page_table(child_frame, level - 1, deallocator, hhdm_offset);
+        } else {
+            // Free level one page
+            let page_frame = PhysFrame::containing_address(entry.addr());
+            deallocator.deallocate_frame(page_frame);
+        }
+        entry.set_unused();
+    }
+    deallocator.deallocate_frame(frame);
 }

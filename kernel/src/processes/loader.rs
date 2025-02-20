@@ -24,6 +24,15 @@ use x86_64::{
 // We import our new helper
 use crate::memory::paging::map_kernel_frame;
 
+/// Function for initializing addresss space for process using ELF executable
+///
+/// # Arguments:
+/// * 'elf_bytes' - byte stream of ELF executable to parse
+/// * 'user_mapper' - Page table for user that maps VAs from section headers to frames
+/// * 'kernel mapper' - kernel page table for mapping VAs to frames for writing ELF metadata to frames
+///
+/// # Returns:
+/// Virtual address of the top of user stack and entry point for process
 pub fn load_elf(
     elf_bytes: &[u8],
     user_mapper: &mut impl Mapper<Size4KiB>,
