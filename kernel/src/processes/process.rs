@@ -2,10 +2,7 @@ extern crate alloc;
 
 use crate::{
     interrupts::gdt,
-    memory::{
-        frame_allocator::alloc_frame,
-        HHDM_OFFSET, MAPPER,
-    },
+    memory::{frame_allocator::alloc_frame, HHDM_OFFSET, MAPPER},
     processes::{loader::load_elf, registers::Registers},
     restore_registers_into_stack, serial_println,
 };

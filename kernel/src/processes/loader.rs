@@ -16,8 +16,7 @@ use goblin::{
 };
 use x86_64::{
     structures::paging::{
-        mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTableFlags,
-        Size4KiB,
+        mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB,
     },
     VirtAddr,
 };
