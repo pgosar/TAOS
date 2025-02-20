@@ -15,6 +15,8 @@ pub struct BitmapFrameAllocator {
     free_frames: usize,
     to_allocate: usize,
     bitmap: Box<[u64]>,
+    allocate_count: usize,
+    free_count: usize,
 }
 
 impl BitmapFrameAllocator {
@@ -31,7 +33,6 @@ impl BitmapFrameAllocator {
         let mut true_end: usize = 0;
         for entry in memory_map.entries().iter() {
             if entry.entry_type == EntryType::USABLE {
-                serial_println!("start addr {:#X}, size is {:#X}", entry.base, entry.length);
                 let end_addr = entry.base + entry.length;
                 if end_addr as usize > true_end {
                     true_end = end_addr as usize;
@@ -150,6 +151,14 @@ impl BitmapFrameAllocator {
     pub fn print_bitmap(&self) {
         serial_println!("Bitmap: {:?}", self.bitmap);
     }
+
+    pub fn get_allocate_count(&self) -> usize {
+        self.allocate_count
+    }
+
+    pub fn get_free_count(&self) -> usize {
+        self.free_count
+    }
 }
 
 unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
@@ -163,7 +172,7 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
                 self.set_bit(self.to_allocate);
                 let addr = self.to_allocate * FRAME_SIZE;
                 self.to_allocate = (self.to_allocate + 1) % self.total_frames;
-                serial_println!("Allocating frame with PA 0x{:x}", addr);
+                self.allocate_count += 1;
                 return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
             }
 
@@ -175,7 +184,7 @@ unsafe impl FrameAllocator<Size4KiB> for BitmapFrameAllocator {
 impl FrameDeallocator<Size4KiB> for BitmapFrameAllocator {
     /// deallocates a frame
     unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {
-        serial_println!("Deallocating frame with PA 0x{:x}", frame.start_address());
+        self.free_count += 1;
         self.mark_frame_free(frame);
     }
 }

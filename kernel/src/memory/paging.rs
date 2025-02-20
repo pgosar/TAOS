@@ -94,8 +94,6 @@ pub fn map_kernel_frame(
         current
     };
 
-    serial_println!("IM MAP KERNEL FRAME 0x{:x}", frame.start_address());
-
     let temp_virt = VirtAddr::new(EPHEMERAL_KERNEL_MAPPINGS_START + offset);
     let temp_page = Page::containing_address(temp_virt);
 
@@ -138,11 +136,6 @@ pub fn clear_process_frames(pcb: &mut PCB) {
     let pml4_frame = pcb.pml4_frame;
     let mapper = unsafe { pcb.create_mapper() };
 
-    with_bitmap_frame_allocator(|alloc| {
-        serial_println!("Before clearing process memory");
-        alloc.print_bitmap_free_frames();
-    });
-
     with_generic_allocator(|deallocator| {
         // Iterate over first 256 entries (user space)
         for i in 0..256 {
@@ -160,7 +153,6 @@ pub fn clear_process_frames(pcb: &mut PCB) {
     });
 
     with_bitmap_frame_allocator(|alloc| {
-        serial_println!("After clearing process memory");
         alloc.print_bitmap_free_frames();
     });
 }

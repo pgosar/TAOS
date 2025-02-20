@@ -42,14 +42,8 @@ fn sys_exit() {
 
         let pcb = process.pcb.get();
 
-        with_bitmap_frame_allocator(|bitmap_alloc| {
-            bitmap_alloc.print_bitmap_free_frames();
-        });
         (*pcb).state = ProcessState::Terminated;
         clear_process_frames(&mut *pcb);
-        with_bitmap_frame_allocator(|bitmap_alloc| {
-            bitmap_alloc.print_bitmap_free_frames();
-        });
         process_table.remove(&event.pid);
         ((*pcb).kernel_rsp, (*pcb).kernel_rip)
     };

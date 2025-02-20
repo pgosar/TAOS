@@ -151,9 +151,6 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
 ///
 /// TODO
 unsafe fn create_process_page_table() -> PhysFrame<Size4KiB> {
-    with_bitmap_frame_allocator(|alloc| {
-        alloc.print_bitmap_free_frames();
-    });
     let frame = alloc_frame().expect("Failed to allocate PML4 frame");
     let virt = *HHDM_OFFSET + frame.start_address().as_u64();
     let ptr = virt.as_mut_ptr::<PageTable>();
