@@ -9,13 +9,18 @@
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
-    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+    structures::{
+        idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+        paging::{OffsetPageTable, Page, PageTable},
+    },
+    VirtAddr,
 };
 
 use crate::{
     constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
+    memory::{paging::create_mapping, HHDM_OFFSET},
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
 };
@@ -120,9 +125,18 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    use x86_64::registers::control::Cr2;
+    use x86_64::registers::control::{Cr2, Cr3};
 
-    let faulting_address = Cr2::read();
+    let faulting_address = Cr2::read().expect("Cannot read faulting address").as_u64();
+    let pml4 = Cr3::read().0;
+    let new_pml4_phys = pml4.start_address();
+    let new_pml4_virt = VirtAddr::new((*HHDM_OFFSET).as_u64()) + new_pml4_phys.as_u64();
+    let new_pml4_ptr: *mut PageTable = new_pml4_virt.as_mut_ptr();
+
+    let mut mapper =
+        unsafe { OffsetPageTable::new(&mut *new_pml4_ptr, VirtAddr::new((*HHDM_OFFSET).as_u64())) };
+
+    let stack_pointer = stack_frame.stack_pointer.as_u64();
 
     serial_println!(
         "EXCEPTION: PAGE FAULT\nFaulting Address: {:?}\nError Code: {:X}\n{:#?}",
@@ -131,6 +145,16 @@ extern "x86-interrupt" fn page_fault_handler(
         stack_frame
     );
 
+    let page = Page::containing_address(VirtAddr::new(faulting_address));
+
+    // check for stack growth
+    if stack_pointer - 64 <= faulting_address && faulting_address < (*HHDM_OFFSET).as_u64() {
+        create_mapping(page, &mut mapper, None);
+    }
+
+    // else, we panic? or smth, report some error
+
+    //panic!("PAGE FAULT!");
     panic!("PAGE FAULT!");
 }
 
