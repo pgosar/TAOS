@@ -1,17 +1,23 @@
 use super::{Event, EventId, EventQueue, EventRunner};
 
-use alloc::{collections::{btree_set::BTreeSet, vec_deque::VecDeque}, sync::Arc};
+use alloc::{
+    collections::{btree_set::BTreeSet, vec_deque::VecDeque},
+    sync::Arc,
+};
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
 
 use core::{
     future::Future,
+    sync::atomic::Ordering,
     task::{Context, Poll},
-    sync::atomic::Ordering
 };
 
-use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, serial_println};
+use crate::{
+    constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY},
+    serial_println,
+};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
@@ -20,7 +26,7 @@ impl EventRunner {
             rewake_queue: Arc::new(RwLock::new(VecDeque::new())),
             pending_events: RwLock::new(BTreeSet::new()),
             current_event: None,
-            clock: 0
+            clock: 0,
         }
     }
 
@@ -83,16 +89,14 @@ impl EventRunner {
                 self.rewake_queue.clone(),
                 priority_level,
                 pid,
-                self.clock
+                self.clock,
             ));
 
             Self::enqueue(&self.event_queues[priority_level], event.clone());
 
-
             let mut write_lock = self.pending_events.write();
 
             write_lock.insert(event.eid.0);
-
         }
     }
 
@@ -109,14 +113,17 @@ impl EventRunner {
     }
 
     fn front_clock(queue: &EventQueue) -> Option<u64> {
-        queue.read().front().map(|e| e.scheduled_clock.load(Ordering::Relaxed))
+        queue
+            .read()
+            .front()
+            .map(|e| e.scheduled_clock.load(Ordering::Relaxed))
     }
 
     fn try_pop(queue: &EventQueue) -> Option<Arc<Event>> {
         queue.write().pop_front()
     }
 
-    fn enqueue(queue: &EventQueue, event: Arc<Event>){
+    fn enqueue(queue: &EventQueue, event: Arc<Event>) {
         queue.write().push_back(event);
     }
 
@@ -128,11 +135,11 @@ impl EventRunner {
                 if event_scheduled_at + PRIORITY_INC_DELAY <= self.clock {
                     let event_to_move = Self::try_pop(&self.event_queues[i]);
                     event_to_move.inspect(|e| {
-                        Self::enqueue(&self.event_queues[i-1], e.clone());
+                        Self::enqueue(&self.event_queues[i - 1], e.clone());
 
-                        e.priority.swap(i-1, Ordering::Relaxed);
+                        e.priority.swap(i - 1, Ordering::Relaxed);
                         e.scheduled_clock.swap(self.clock, Ordering::Relaxed);
-                        serial_println!("{:?} priority {} -> {} @ {}", e.eid, i, i-1, self.clock);
+                        serial_println!("{:?} priority {} -> {} @ {}", e.eid, i, i - 1, self.clock);
                     });
                 }
             });

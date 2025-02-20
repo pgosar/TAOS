@@ -10,7 +10,14 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::{INFINITE_LOOP, LONG_LOOP, SYSCALL_BINARY}, debug, devices, events::{register_event_runner, run_loop, schedule_process}, interrupts::{self, idt}, logging, memory::{self}, processes::process::{create_process, run_process_ring3}, trace
+    constants::processes::{INFINITE_LOOP, LONG_LOOP, SYSCALL_BINARY},
+    debug, devices,
+    events::{register_event_runner, run_loop, schedule_process},
+    interrupts::{self, idt},
+    logging,
+    memory::{self},
+    processes::process::{create_process, run_process_ring3},
+    trace,
 };
 
 extern crate alloc;
@@ -52,16 +59,16 @@ pub fn init() -> u32 {
     idt::enable();
 
     unsafe {
-        let pid = create_process(LONG_LOOP);    
+        let pid = create_process(LONG_LOOP);
         schedule_process(bsp_id, run_process_ring3(pid), pid);
 
-        let pid2 = create_process(LONG_LOOP);    
+        let pid2 = create_process(LONG_LOOP);
         schedule_process(bsp_id, run_process_ring3(pid2), pid2);
 
-        let pid3 = create_process(SYSCALL_BINARY);    
+        let pid3 = create_process(SYSCALL_BINARY);
         schedule_process(bsp_id, run_process_ring3(pid3), pid3);
 
-        let pid4 = create_process(INFINITE_LOOP);    
+        let pid4 = create_process(INFINITE_LOOP);
         schedule_process(bsp_id, run_process_ring3(pid4), pid4);
     }
 
@@ -95,7 +102,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     register_event_runner(cpu.id);
     idt::enable();
 
-    let pid = create_process(LONG_LOOP);    
+    let pid = create_process(LONG_LOOP);
     schedule_process(cpu.id, run_process_ring3(pid), pid);
 
     debug!("AP {} entering event loop", cpu.id);

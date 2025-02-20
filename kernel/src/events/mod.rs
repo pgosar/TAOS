@@ -12,7 +12,6 @@ use core::{
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
-
 use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 mod event;
@@ -43,7 +42,7 @@ struct Event {
     future: SendFuture,
     rewake_queue: Arc<EventQueue>,
     priority: AtomicUsize,
-    scheduled_clock: AtomicU64
+    scheduled_clock: AtomicU64,
 }
 
 // Schedules and runs events within a single core
@@ -52,7 +51,7 @@ struct EventRunner {
     rewake_queue: Arc<EventQueue>,
     pending_events: RwLock<BTreeSet<u64>>,
     current_event: Option<Arc<Event>>,
-    clock: u64
+    clock: u64,
 }
 
 // Global mapping of cores to events
@@ -88,8 +87,8 @@ pub fn schedule_process(
     without_interrupts(|| {
         let runners = EVENT_RUNNERS.read();
         let mut runner = runners.get(&cpuid).expect("No runner found").write();
-    
-        runner.schedule(future, NUM_EVENT_PRIORITIES-1, pid);
+
+        runner.schedule(future, NUM_EVENT_PRIORITIES - 1, pid);
     });
 }
 

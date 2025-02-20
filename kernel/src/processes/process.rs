@@ -185,7 +185,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     let registers = &(*process).registers.clone();
 
-    (*process).kernel_rip = return_process as u64;
+    (*process).kernel_rip = return_process as usize as u64;
 
     // Stack layout to move into user mode
     unsafe {
@@ -201,7 +201,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             in("rsi") user_ds,
             in("rdx") user_cs,
             in("rcx") &(*process).kernel_rsp,
-            in("r8")  &(*process).state 
+            in("r8")  &(*process).state
         );
     }
 }
@@ -228,9 +228,8 @@ unsafe fn call_process() {
         push rsi
         push rbx
         ",
-        "mov r11, rsp",  // Move RSP to R11
+        "mov r11, rsp",   // Move RSP to R11
         "mov [rcx], r11", // store RSP (from R11)
-
         // Needed for cross-privilege iretq
         "push rsi", //ss
         "mov rax, [rdi + 120]",
@@ -239,10 +238,8 @@ unsafe fn call_process() {
         "push rax", //rflags
         "push rdx", //cs
         "mov rax, [rdi + 128]",
-        "push rax", //rip
-
+        "push rax",             //rip
         "mov byte ptr [r8], 2", //set state to ProcessState::Running
-
         // Restore all registers before entering process
         "mov rax, [rdi]",
         "mov rbx, [rdi+8]",
@@ -259,7 +256,6 @@ unsafe fn call_process() {
         "mov r15, [rdi+104]",
         "mov rbp, [rdi+112]",
         "mov rdi, [rdi+40]",
-
         "sti",   //enable interrupts
         "iretq", // call process
     );

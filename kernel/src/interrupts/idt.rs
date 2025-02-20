@@ -6,7 +6,6 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
@@ -139,13 +138,9 @@ extern "x86-interrupt" fn page_fault_handler(
 extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
     unsafe {
         // I believe we need to save registers
-        core::arch::asm!(
-            "push rax",
-            "call dispatch_syscall",
-            "pop rax",
-        );
+        core::arch::asm!("push rax", "call dispatch_syscall", "pop rax",);
     }
-    
+
     x2apic::send_eoi();
 }
 
@@ -228,8 +223,8 @@ extern "C" fn timer_handler(rsp: u64) {
         (*pcb).registers.rdx = *stack_ptr.add(3);
         (*pcb).registers.rsi = *stack_ptr.add(4);
         (*pcb).registers.rdi = *stack_ptr.add(5);
-        (*pcb).registers.r8  = *stack_ptr.add(6);
-        (*pcb).registers.r9  = *stack_ptr.add(7);
+        (*pcb).registers.r8 = *stack_ptr.add(6);
+        (*pcb).registers.r9 = *stack_ptr.add(7);
         (*pcb).registers.r10 = *stack_ptr.add(8);
         (*pcb).registers.r11 = *stack_ptr.add(9);
         (*pcb).registers.r12 = *stack_ptr.add(10);
@@ -248,11 +243,7 @@ extern "C" fn timer_handler(rsp: u64) {
     };
 
     unsafe {
-        schedule_process (
-            cpuid, 
-    run_process_ring3(event.pid), 
-            event.pid
-        );
+        schedule_process(cpuid, run_process_ring3(event.pid), event.pid);
 
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
         core::arch::asm!(
@@ -264,9 +255,7 @@ extern "C" fn timer_handler(rsp: u64) {
 
         x2apic::send_eoi();
 
-        core::arch::asm!(
-            "ret"
-        );
+        core::arch::asm!("ret");
     }
 }
 
