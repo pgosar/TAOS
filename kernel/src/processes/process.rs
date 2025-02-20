@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::{
     interrupts::gdt,
     memory::{
-        frame_allocator::{alloc_frame, with_bitmap_frame_allocator},
+        frame_allocator::alloc_frame,
         HHDM_OFFSET, MAPPER,
     },
     processes::{loader::load_elf, registers::Registers},

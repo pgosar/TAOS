@@ -2,7 +2,12 @@ use crate::{
     constants::{
         memory::PAGE_SIZE,
         processes::{STACK_SIZE, STACK_START},
-    }, memory::{frame_allocator::with_generic_allocator, paging::{create_mapping, update_permissions}, HHDM_OFFSET}, serial, serial_println
+    },
+    memory::{
+        frame_allocator::with_generic_allocator,
+        paging::{create_mapping, update_permissions},
+    },
+    serial_println,
 };
 use core::ptr::{copy_nonoverlapping, write_bytes};
 use goblin::{
@@ -10,7 +15,10 @@ use goblin::{
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
 };
 use x86_64::{
-    structures::paging::{mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB},
+    structures::paging::{
+        mapper::CleanUp, Mapper, OffsetPageTable, Page, PageTableFlags,
+        Size4KiB,
+    },
     VirtAddr,
 };
 
@@ -93,9 +101,7 @@ pub fn load_elf(
                 flags |= PageTableFlags::NO_EXECUTE;
             }
             serial_println!("Flags: {:?}", flags);
-            unsafe {
-                update_permissions(page, user_mapper, flags);
-            }
+            update_permissions(page, user_mapper, flags);
 
             let unmap_page: Page<Size4KiB> = Page::containing_address(kernel_alias);
             // unmap the frame, but do not actually deallocate it
@@ -107,6 +113,7 @@ pub fn load_elf(
                 .flush();
             with_generic_allocator(|allocator| unsafe { kernel_mapper.clean_up(allocator) });
 
+            update_permissions(page, user_mapper, flags);
         }
 
         serial_println!("Segment {} loaded successfully.", i);
