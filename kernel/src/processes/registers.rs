@@ -24,47 +24,6 @@ macro_rules! push_registers {
     }};
 }
 
-#[macro_export]
-macro_rules! restore_registers_into_stack {
-    ($regs:expr) => {
-        asm!(
-            "sub rsp, 64",
-            "push {0}",
-            "push {1}",
-            "push {2}",
-            "push {3}",
-            "push {4}",
-            "push {5}",
-            "push {6}",
-            "push {7}",
-            "push {8}",
-            "push {9}",
-            "push {10}",
-            "push {11}",
-            "push {12}",
-            "push {13}",
-            "push {14}",
-            "add rsp, 184",
-
-            in(reg) $regs.rbp,
-            in(reg) $regs.r15,
-            in(reg) $regs.r14,
-            in(reg) $regs.r13,
-            in(reg) $regs.r12,
-            in(reg) $regs.r11,
-            in(reg) $regs.r10,
-            in(reg) $regs.r9,
-            in(reg) $regs.r8,
-            in(reg) $regs.rdi,
-            in(reg) $regs.rsi,
-            in(reg) $regs.rdx,
-            in(reg) $regs.rcx,
-            in(reg) $regs.rbx,
-            in(reg) $regs.rax
-        );
-    };
-}
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Registers {

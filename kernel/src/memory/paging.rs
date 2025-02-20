@@ -257,7 +257,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{constants::memory::PAGE_SIZE, events::schedule, memory::MAPPER};
+    use crate::{constants::memory::PAGE_SIZE, events::schedule_kernel, memory::MAPPER};
     use alloc::vec::Vec;
     use x86_64::structures::paging::mapper::TranslateError;
 
@@ -386,7 +386,7 @@ mod tests {
         // mapping exists now and is cached for first core
 
         // tell core 1 to read the value (to TLB cache) and wait until it's done
-        schedule(AP, async move { pre_read(page).await }, PRIORITY, PID);
+        schedule_kernel(AP, async move { pre_read(page).await }, PRIORITY);
 
         while PRE_READ.load(Ordering::SeqCst) == 0 {
             core::hint::spin_loop();
@@ -407,7 +407,7 @@ mod tests {
         }
 
         // back on core 1, read the value and see if it has changed
-        schedule(AP, async move { post_read(page).await }, PRIORITY, PID);
+        schedule_kernel(AP, async move { post_read(page).await }, PRIORITY);
 
         while POST_READ.load(Ordering::SeqCst) == 0 {
             core::hint::spin_loop();

@@ -1,5 +1,5 @@
 use crate::{
-    constants::syscalls::SYSCALL_EXIT,
+    constants::syscalls::{SYSCALL_EXIT, SYSCALL_PRINT},
     events::{current_running_event_info, EventInfo},
     processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
     serial_println,
@@ -16,6 +16,7 @@ extern "C" fn dispatch_syscall() {
 
     match syscall_num {
         SYSCALL_EXIT => sys_exit(),
+        SYSCALL_PRINT => serial_println!("Hello world!"),
         _ => panic!("Unknown syscall: {}", syscall_num),
     }
 }

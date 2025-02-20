@@ -13,7 +13,9 @@ use crate::{
     debug, devices,
     events::{register_event_runner, run_loop},
     interrupts::{self, idt},
-    logging, memory, trace,
+    logging,
+    memory::{self},
+    trace,
 };
 
 extern crate alloc;
