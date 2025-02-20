@@ -189,6 +189,10 @@ pub fn map_kernel_frame(
     temp_virt
 }
 
+pub fn create_not_present_mapping(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
+
+}
+
 /// Update permissions for a specific page
 ///
 /// # Arguments
