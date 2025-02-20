@@ -1,6 +1,6 @@
-use super::{Event, EventRunner};
+use super::{Event, EventId, EventQueue, EventRunner};
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use alloc::{collections::{btree_set::BTreeSet, vec_deque::VecDeque}, sync::Arc};
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
 use x86_64::instructions::interrupts;
@@ -10,46 +10,23 @@ use core::{
     task::{Context, Poll},
 };
 
-use crossbeam_queue::SegQueue;
-
 use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 impl EventRunner {
     pub fn init() -> EventRunner {
         EventRunner {
-            event_queues: core::array::from_fn(|_| Arc::new(SegQueue::new())),
-            rewake_queue: Arc::new(SegQueue::new()),
+            event_queues: core::array::from_fn(|_| RwLock::new(VecDeque::new())),
+            rewake_queue: Arc::new(RwLock::new(VecDeque::new())),
             pending_events: RwLock::new(BTreeSet::new()),
             current_event: None,
-        }
-    }
-
-    fn next_event(&mut self) -> Option<Arc<Event>> {
-        if !self.rewake_queue.is_empty() {
-            self.rewake_queue.pop()
-        } else {
-            let mut event = None;
-
-            for i in 0..NUM_EVENT_PRIORITIES {
-                if !self.event_queues[i].is_empty() {
-                    event = self.event_queues[i].pop();
-                    break;
-                }
-            }
-
-            event
         }
     }
 
     pub fn run_loop(&mut self) -> ! {
         loop {
             loop {
-                {
-                    let read_lock = self.pending_events.read();
-
-                    if read_lock.is_empty() {
-                        break;
-                    }
+                if self.have_pending_events() {
+                    break;
                 }
 
                 self.current_event = self.next_event();
@@ -59,9 +36,7 @@ impl EventRunner {
                     .as_ref()
                     .expect("Have pending events, but empty waiting queues.");
 
-                let pe_read_lock = self.pending_events.read();
-                if pe_read_lock.contains(&event.eid.0) {
-                    drop(pe_read_lock);
+                if self.contains_event(event.eid) {
                     let waker = waker_ref(event);
                     let mut context: Context<'_> = Context::from_waker(&waker);
 
@@ -72,7 +47,7 @@ impl EventRunner {
                     drop(future_guard);
 
                     if !ready {
-                        self.event_queues[event.priority].push(event.clone());
+                        Self::enqueue(&self.event_queues[event.priority], event.clone());
                     } else {
                         let mut write_lock = self.pending_events.write();
                         write_lock.remove(&event.eid.0);
@@ -98,23 +73,58 @@ impl EventRunner {
         if priority_level >= NUM_EVENT_PRIORITIES {
             panic!("Invalid event priority: {}", priority_level);
         } else {
-            let arc = Arc::new(Event::init(
+            let event = Arc::new(Event::init(
                 future,
                 self.rewake_queue.clone(),
                 priority_level,
                 pid,
             ));
 
-            self.event_queues[priority_level].push(arc.clone());
+            Self::enqueue(&self.event_queues[priority_level], event.clone());
+
 
             let mut write_lock = self.pending_events.write();
 
-            write_lock.insert(arc.eid.0);
+            write_lock.insert(event.eid.0);
 
         }
     }
 
     pub fn current_running_event(&self) -> Option<&Arc<Event>> {
         self.current_event.as_ref()
+    }
+
+    fn have_pending_events(&self) -> bool {
+        self.pending_events.read().is_empty()
+    }
+
+    fn contains_event(&self, eid: EventId) -> bool {
+        self.pending_events.read().contains(&eid.0)
+    }
+
+    fn try_pop(queue: &EventQueue) -> Option<Arc<Event>> {
+        queue.write().pop_front()
+    }
+
+    fn enqueue(queue: &EventQueue, event: Arc<Event>){
+        queue.write().push_back(event);
+    }
+
+    fn next_event(&mut self) -> Option<Arc<Event>> {
+        let rewake = Self::try_pop(&self.rewake_queue);
+        if rewake.is_some() {
+            rewake
+        } else {
+            let mut event = None;
+
+            for i in 0..NUM_EVENT_PRIORITIES {
+                event = Self::try_pop(&self.event_queues[i]);
+                if event.is_some() {
+                    break;
+                }
+            }
+
+            event
+        }
     }
 }

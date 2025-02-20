@@ -1,6 +1,6 @@
 use alloc::{
     boxed::Box,
-    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
+    collections::{btree_map::BTreeMap, btree_set::BTreeSet, vec_deque::VecDeque},
     sync::Arc,
 };
 use spin::{mutex::Mutex, rwlock::RwLock};
@@ -12,7 +12,6 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crossbeam_queue::SegQueue;
 
 use crate::constants::events::NUM_EVENT_PRIORITIES;
 
@@ -23,7 +22,7 @@ mod event_runner;
 type SendFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;
 
 // Thread-safe static queue of events
-type EventQueue = Arc<SegQueue<Arc<Event>>>;
+type EventQueue = RwLock<VecDeque<Arc<Event>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct EventId(u64);
@@ -42,14 +41,14 @@ struct Event {
     eid: EventId,
     pid: u32,
     future: SendFuture,
-    rewake_queue: EventQueue,
+    rewake_queue: Arc<EventQueue>,
     priority: usize,
 }
 
 // Schedules and runs events within a single core
 struct EventRunner {
     event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
-    rewake_queue: EventQueue,
+    rewake_queue: Arc<EventQueue>,
     pending_events: RwLock<BTreeSet<u64>>,
     current_event: Option<Arc<Event>>,
 }
