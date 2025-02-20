@@ -6,15 +6,12 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-use core::arch::asm;
 
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
-
-use alloc::{boxed::Box, sync::Arc};
 
 use crate::{
     constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
@@ -24,10 +21,7 @@ use crate::{
         x2apic::{current_core_id, TLB_SHOOTDOWN_ADDR},
     },
     prelude::*,
-    processes::{
-        process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-        registers::Registers,
-    },
+    processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
 };
 
 lazy_static! {
@@ -154,16 +148,7 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
             "pop rax",
         );
     }
-
-    let rsp2: u64;
-    unsafe {
-        asm!(
-            "mov {}, rsp",
-            out(reg) rsp2
-        );
-    };
-    serial_println!("RSP in syscall: {:#x}", rsp2);
-
+    
     x2apic::send_eoi();
 }
 
@@ -216,14 +201,6 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 
 #[no_mangle]
 extern "C" fn timer_handler(rsp: u64) {
-    let rsp2: u64;
-    unsafe {
-        asm!(
-            "mov {}, rsp",
-            out(reg) rsp2
-        );
-    };
-
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     if event.pid == 0 {
@@ -274,10 +251,6 @@ extern "C" fn timer_handler(rsp: u64) {
     };
 
     unsafe {
-        serial_println!("Timer INT. RSP: {:#x} vs RSP?: {:#x}", rsp, rsp2);
-        let y = Box::new(17);
-        serial_println!("INT Malloc @ {:p}", y);
-
         schedule(
             cpuid,
             run_process_ring3(event.pid),
@@ -285,17 +258,18 @@ extern "C" fn timer_handler(rsp: u64) {
             event.pid,
         );
 
-        serial_println!("RSP {:#x} -> {:#x}", rsp, preemption_info.0);
-
-        x2apic::send_eoi();
-
         // Restore kernel RSP + PC -> RIP from where it was stored in run/resume process
         core::arch::asm!(
             "mov rsp, {0}",
             "push {1}",
-            "ret",
             in(reg) preemption_info.0,
             in(reg) preemption_info.1
+        );
+
+        x2apic::send_eoi();
+
+        core::arch::asm!(
+            "ret"
         );
     }
 }

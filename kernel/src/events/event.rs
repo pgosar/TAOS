@@ -1,8 +1,6 @@
-use crate::{serial, serial_println};
-
 use super::{Event, EventId, EventQueue};
 use alloc::{boxed::Box, sync::Arc};
-use core::{future::Future, pin::{self, Pin}};
+use core::future::Future;
 use futures::task::ArcWake;
 use spin::Mutex;
 

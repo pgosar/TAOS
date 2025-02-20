@@ -3,7 +3,6 @@
 //! Handles the initialization of kernel subsystems and CPU cores.
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use alloc::boxed::Box;
 use limine::{
     request::SmpRequest,
     smp::{Cpu, RequestFlags},
@@ -11,7 +10,7 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::{BINARY, LONG_LOOP, SYSCALL_BINARY}, debug, devices, events::{register_event_runner, run_loop, schedule}, interrupts::{self, idt}, logging, memory::{self}, processes::process::{create_process, run_process_ring3}, serial_println, trace
+    constants::processes::{INFINITE_LOOP, LONG_LOOP, SYSCALL_BINARY}, debug, devices, events::{register_event_runner, run_loop, schedule}, interrupts::{self, idt}, logging, memory::{self}, processes::process::{create_process, run_process_ring3}, trace
 };
 
 extern crate alloc;
@@ -59,15 +58,11 @@ pub fn init() -> u32 {
         let pid2 = create_process(LONG_LOOP);    
         schedule(bsp_id, run_process_ring3(pid2), 0, pid2);
 
-        // let pid3 = create_process(SYSCALL_BINARY);    
-        // schedule(bsp_id, run_process_ring3(pid3), 0, pid3);
-        
-        let rsp: usize;
-        core::arch::asm!(
-            "mov {}, rsp",
-            out(reg) rsp
-        );
-        serial_println!("RSP: {:#x}", rsp);
+        let pid3 = create_process(SYSCALL_BINARY);    
+        schedule(bsp_id, run_process_ring3(pid3), 0, pid3);
+
+        let pid4 = create_process(INFINITE_LOOP);    
+        schedule(bsp_id, run_process_ring3(pid4), 0, pid4);
     }
 
     bsp_id
@@ -99,6 +94,9 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
 
     register_event_runner(cpu.id);
     idt::enable();
+
+    let pid = create_process(LONG_LOOP);    
+    schedule(cpu.id, run_process_ring3(pid), 0, pid);
 
     debug!("AP {} entering event loop", cpu.id);
     run_loop(cpu.id)

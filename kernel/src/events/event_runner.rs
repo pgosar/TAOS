@@ -12,7 +12,7 @@ use core::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::{constants::events::NUM_EVENT_PRIORITIES, serial_println};
+use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 impl EventRunner {
     pub fn init() -> EventRunner {

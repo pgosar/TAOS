@@ -185,14 +185,7 @@ pub async unsafe fn run_process_ring3(pid: u32) {
 
     let registers = &(*process).registers.clone();
 
-    // (*process).state = ProcessState::Running;
-
-    let rsp: usize;
-    core::arch::asm!(
-        "mov {}, rsp",
-        out(reg) rsp
-    );
-    serial_println!("RSP in run_process: {:#x}", rsp);
+    (*process).kernel_rip = return_process as u64;
 
     // Stack layout to move into user mode
     unsafe {
@@ -207,12 +200,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
             in("rdi") registers as *const Registers,
             in("rsi") user_ds,
             in("rdx") user_cs,
-            in("rcx") &(*process).kernel_rip,
-            in("r8")  &(*process).kernel_rsp,
-            in("r9") return_process,
-
-            //TODO r10 is not a parameter register by default
-            in("r10") &(*process).state 
+            in("rcx") &(*process).kernel_rsp,
+            in("r8")  &(*process).state 
         );
     }
 }
@@ -239,9 +228,8 @@ unsafe fn call_process() {
         push rsi
         push rbx
         ",
-        "mov [rcx], r9", // Return RIP in R9, store
         "mov r11, rsp",  // Move RSP to R11
-        "mov [r8], r11", // store RSP (from R11)
+        "mov [rcx], r11", // store RSP (from R11)
 
         // Needed for cross-privilege iretq
         "push rsi", //ss
@@ -253,8 +241,7 @@ unsafe fn call_process() {
         "mov rax, [rdi + 128]",
         "push rax", //rip
 
-        "mov r12, 2",     //ProcessState::Running
-        "mov [r10], r12", //set state to running
+        "mov byte ptr [r8], 2", //set state to ProcessState::Running
 
         // Restore all registers before entering process
         "mov rax, [rdi]",
