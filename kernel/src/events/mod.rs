@@ -143,11 +143,11 @@ pub fn runner_timestamp(cpuid: u32) -> u64 {
     runner.system_clock
 }
 
-pub fn nanosleep_current_event(cpuid: u32, nanos: u64) {
+pub fn nanosleep_current_event(cpuid: u32, nanos: u64) -> Option<Sleep> {
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.nanosleep_current_event(nanos);
+    runner.nanosleep_current_event(nanos)
 }
 
 #[derive(Debug)]

@@ -6,7 +6,7 @@ use alloc::{
 };
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
-use x86_64::instructions::interrupts;
+use x86_64::instructions::interrupts::{self, without_interrupts};
 
 use core::{
     future::Future,
@@ -14,12 +14,9 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{
-    constants::{
-        events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY},
-        x2apic::CPU_FREQUENCY,
-    },
-    serial_println,
+use crate::constants::{
+    events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY},
+    x2apic::CPU_FREQUENCY,
 };
 
 impl EventRunner {
@@ -38,7 +35,7 @@ impl EventRunner {
     pub fn run_loop(&mut self) -> ! {
         loop {
             loop {
-                if self.have_pending_events() {
+                if !self.have_unblocked_events() {
                     break;
                 }
 
@@ -62,12 +59,12 @@ impl EventRunner {
                     drop(future_guard);
 
                     if !ready {
-                        let priority = event.priority.load(Ordering::Relaxed);
+                        // let priority = event.priority.load(Ordering::Relaxed);
 
                         event
                             .scheduled_timestamp
                             .swap(self.event_clock, Ordering::Relaxed);
-                        Self::enqueue(&self.event_queues[priority], event.clone());
+                        // Self::enqueue(&self.event_queues[priority], event.clone());
                     } else {
                         let mut write_lock = self.pending_events.write();
                         write_lock.remove(&event.eid.0);
@@ -78,6 +75,11 @@ impl EventRunner {
             }
 
             // TODO do a lil work-stealing
+
+            // Must have pending, but blocked, events
+            if self.have_pending_events() {
+                self.awake_next_sleeper();
+            }
 
             interrupts::enable_and_hlt();
         }
@@ -119,6 +121,7 @@ impl EventRunner {
 
     pub fn awake_next_sleeper(&mut self) {
         let sleeper = self.sleeping_events.peek();
+
         if sleeper.is_some() {
             let future = sleeper.unwrap();
             if future.target_timestamp <= self.system_clock {
@@ -127,17 +130,35 @@ impl EventRunner {
         }
     }
 
-    pub fn nanosleep_current_event(&mut self, nanos: u64) {
-        self.current_event.as_ref().inspect(|e| {
-            let system_ticks = (nanos * CPU_FREQUENCY as u64) / 1_000_000_000;
+    pub fn nanosleep_current_event(&mut self, nanos: u64) -> Option<Sleep> {
+        without_interrupts(|| {
+            self.current_event.as_ref().map(|e| {
+                let system_ticks = (nanos * CPU_FREQUENCY as u64) / 1_000_000_000;
 
-            self.sleeping_events
-                .push(Sleep::new(self.system_clock + system_ticks, (*e).clone()));
-        });
+                let sleep = Sleep::new(self.system_clock + system_ticks, (*e).clone());
+                self.sleeping_events.push(sleep.clone());
+
+                sleep
+            })
+        })
     }
 
     fn have_pending_events(&self) -> bool {
-        self.pending_events.read().is_empty()
+        !self.pending_events.read().is_empty()
+    }
+
+    fn have_unblocked_events(&self) -> bool {
+        if !self.rewake_queue.read().is_empty() {
+            true
+        } else {
+            for queue in self.event_queues.iter() {
+                if !queue.read().is_empty() {
+                    return true;
+                }
+            }
+
+            false
+        }
     }
 
     fn contains_event(&self, eid: EventId) -> bool {
@@ -172,13 +193,6 @@ impl EventRunner {
                         e.priority.swap(i - 1, Ordering::Relaxed);
                         e.scheduled_timestamp
                             .swap(self.event_clock, Ordering::Relaxed);
-                        serial_println!(
-                            "{:?} priority {} -> {} @ {}",
-                            e.eid,
-                            i,
-                            i - 1,
-                            self.event_clock
-                        );
                     });
                 }
             });

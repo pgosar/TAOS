@@ -10,13 +10,14 @@ use futures::task::ArcWake;
 
 use super::{runner_timestamp, Event};
 
+#[derive(Clone)]
 pub struct Sleep {
     pub target_timestamp: u64,
-    pub event: Arc<Event>,
+    event: Arc<Event>,
 }
 
 impl Sleep {
-    pub fn new(target_timestamp: u64, event: Arc<Event>) -> Sleep {
+    pub(super) fn new(target_timestamp: u64, event: Arc<Event>) -> Sleep {
         Sleep {
             target_timestamp,
             event,
