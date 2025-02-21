@@ -6,14 +6,12 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-use core::arch::naked_asm;
-
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::{
         idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
-        paging::{OffsetPageTable, Page, PageTable},
+        paging::{OffsetPageTable, Page, PageTable, PageTableFlags},
     },
     VirtAddr,
 };
@@ -21,14 +19,19 @@ use x86_64::{
 use crate::{
     constants::{
         idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
-        syscalls::{SYSCALL_EXIT, SYSCALL_PRINT},
+        memory::PAGE_SIZE,
+        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP, SYSCALL_PRINT},
     },
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
-    memory::{paging::create_mapping, HHDM_OFFSET},
+    memory::{
+        frame_allocator::alloc_frame,
+        paging::{create_mapping, update_mapping},
+        HHDM_OFFSET, MAPPER,
+    },
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-    syscalls::syscall_handlers::sys_exit,
+    syscalls::{mmap::sys_mmap, syscall_handlers::{sys_exit, sys_print}},
 };
 
 lazy_static! {
@@ -47,7 +50,7 @@ lazy_static! {
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
         idt[SYSCALL_HANDLER]
-            .set_handler_fn(naked_syscall_handler)
+            .set_handler_fn(syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
@@ -145,7 +148,7 @@ extern "x86-interrupt" fn page_fault_handler(
     let stack_pointer = stack_frame.stack_pointer.as_u64();
 
     serial_println!(
-        "EXCEPTION: PAGE FAULT\nFaulting Address: {:?}\nError Code: {:X}\n{:#?}",
+        "EXCEPTION: PAGE FAULT\nFaulting Address: {:#X}\nError Code: {:X}\n{:#?}",
         faulting_address,
         error_code,
         stack_frame
@@ -156,77 +159,90 @@ extern "x86-interrupt" fn page_fault_handler(
     // check for stack growth
     if stack_pointer - 64 <= faulting_address && faulting_address < (*HHDM_OFFSET).as_u64() {
         create_mapping(page, &mut mapper, None);
+        return;
     }
 
-    panic!("PAGE FAULT!");
+    // check if lazy loaded address from mmap
+    let cpuid: u32 = x2apic::current_core_id() as u32;
+    let event: EventInfo = current_running_event_info(cpuid);
+    let mut pid = event.pid;
+    pid = 1;
+    let process_table = PROCESS_TABLE.write();
+    let process = process_table
+        .get(&pid)
+        .expect("Could not get pcb from process table");
+    let pcb = unsafe { &mut *process.pcb.get() };
+    let mmaps = &mut pcb.mmaps;
+
+    for entry in mmaps.iter_mut() {
+        if entry.contains(faulting_address) {
+            serial_println!("Entry start: {}", entry.start);
+            let index = ((faulting_address - entry.start) / PAGE_SIZE as u64) as usize;
+            let mut mapper = MAPPER.lock();
+            let frame = alloc_frame().expect("Could not allocate frame");
+            entry.loaded[index] = true;
+            update_mapping(
+                page,
+                &mut *mapper,
+                frame,
+                Some(
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::USER_ACCESSIBLE,
+                ),
+            );
+            if !entry.loaded[index] && entry.fd == -1 {
+                break;
+            } else if !entry.loaded[index] && entry.fd != -1 {
+                let _open_file = pcb.fd_table[entry.fd as usize];
+                let _pos = faulting_address - entry.start + entry.offset;
+                // figure out where in the file we are
+                // load file content
+                // write content to physmem
+            }
+        }
+    }
 }
 
 #[no_mangle]
-#[naked]
-pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
-    unsafe {
-        naked_asm!(
-            // Push registers to save them
-            "push rax",
-            "push rdi",
-            "push rsi",
-            "push rdx",
-            "push rcx",
-            "push r8",
-            "push r9",
-            "mov	rdi, rsp",
-            // Call the syscall_handler
-            "call syscall_handler",
-            // Restore registers
-            "pop r9",
-            "pop r8",
-            "pop rcx",
-            "pop rdx",
-            "pop rsi",
-            "pop rdi",
-            "pop rax",
-            "iretq"
-        );
-    }
-}
-
-// This is the actual syscall handler function that reads the registers from the stack
-#[no_mangle]
-fn syscall_handler(rsp: u64) {
-    let syscall_num: u64;
+extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
+    let syscall_num: u32;
     let p1: u64;
     let p2: u64;
     let p3: u64;
     let p4: u64;
     let p5: u64;
     let p6: u64;
-    let stack_ptr: *const u64 = rsp as *const u64;
     unsafe {
-        syscall_num = *stack_ptr.add(6);
-        p1 = *stack_ptr.add(5);
-        p2 = *stack_ptr.add(4);
-        p3 = *stack_ptr.add(3);
-        p4 = *stack_ptr.add(2);
-        p5 = *stack_ptr.add(1);
-        p6 = *stack_ptr.add(0);
+        core::arch::asm!(
+            "mov {0:r}, rax",
+            "mov {1}, rbx",
+            "mov {2}, rcx",
+            "mov {3}, rdx",
+            "mov {4}, rsi",
+            "mov {5}, rdi",
+            "mov {6}, rbp",
+            out(reg) syscall_num,
+            out(reg) p1,
+            out(reg) p2,
+            out(reg) p3,
+            out(reg) p4,
+            out(reg) p5,
+            out(reg) p6,
+        );
     }
 
-    // temporarily, just print the parameter registers
-    serial_println!("Parameter 1: {}", p1);
-    serial_println!("Parameter 2: {}", p2);
-    serial_println!("Parameter 3: {}", p3);
-    serial_println!("Parameter 4: {}", p4);
-    serial_println!("Parameter 5: {}", p5);
-    serial_println!("Parameter 6: {}", p6);
+    serial_println!("Number is {} and arg1 is {}", syscall_num, p1);
 
-    match syscall_num as u32 {
+    match syscall_num {
         SYSCALL_EXIT => sys_exit(),
-        SYSCALL_PRINT => serial_println!("Hello world!"),
+        SYSCALL_MMAP => sys_mmap(p1, p2, p3, p4, p5 as i64, p6),
+        SYSCALL_PRINT => sys_print(p1 as *const u8),
         _ => panic!("Unknown syscall: {}", syscall_num),
     };
-
     x2apic::send_eoi();
 }
+
 #[naked]
 #[allow(undefined_naked_function_abi)]
 extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
