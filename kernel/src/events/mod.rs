@@ -16,6 +16,7 @@ use crate::constants::events::NUM_EVENT_PRIORITIES;
 
 mod event;
 mod event_runner;
+mod futures;
 
 // Thread-safe future that remains pinned to a heap address throughout its lifetime
 type SendFuture = Mutex<Pin<Box<dyn Future<Output = ()> + 'static + Send>>>;

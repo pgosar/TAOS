@@ -62,3 +62,15 @@ pub async fn print_nums_after_rand_delay(seed: u32) -> () {
 
     serial_println!("Random results: {} {}", res.0, res.1);
 }
+
+struct Sleep {
+  target_timestamp: u64,
+}
+
+impl Future for Sleep {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        todo!()
+    }
+}
