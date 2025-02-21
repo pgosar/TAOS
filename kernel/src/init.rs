@@ -10,16 +10,14 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::{LONG_LOOP, RAND_REGS_EXIT, SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
+    constants::processes::SYSCALL_MMAP_MEMORY,
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},
     logging,
     memory::{self},
-    processes::process::{self, create_process, run_process_ring3, PROCESS_TABLE},
-    serial_println,
-    syscalls::mmap::{sys_mmap, MmapFlags, ProtFlags},
-    trace,
+    processes::process::{create_process, run_process_ring3, PROCESS_TABLE},
+    serial_println, trace,
 };
 
 extern crate alloc;
@@ -68,7 +66,7 @@ pub fn init() -> u32 {
     //     -1,
     //     0,
     // );
-    let pid = create_process(RAND_REGS_EXIT);
+    let pid = create_process(SYSCALL_MMAP_MEMORY);
     unsafe { schedule_process(bsp_id, run_process_ring3(pid), pid) };
 
     let process_table = PROCESS_TABLE.read();

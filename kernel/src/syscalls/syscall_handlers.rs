@@ -1,51 +1,12 @@
 use crate::{
-    constants::syscalls::{SYSCALL_EXIT, SYSCALL_MMAP},
     events::{current_running_event_info, EventInfo},
-    interrupts::x2apic::send_eoi,
     processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
     serial_println,
-    syscalls::mmap::*,
 };
 
 use crate::interrupts::x2apic;
 
-#[no_mangle]
-extern "C" fn dispatch_syscall() {
-    let syscall_num: u32;
-    let param_1: u64;
-    let param_2: u64;
-    let param_3: u64;
-    let param_4: u64;
-    let param_5: u64;
-    let param_6: u64;
-    unsafe {
-        core::arch::asm!(
-            "mov {0:r}, rax",
-            "mov {1}, rdi",
-            "mov {2}, rsi",
-            "mov {3}, rdx",
-            "mov {4}, r10",
-            "mov {5}, r9",
-            "mov {6}, r8",
-            out(reg) syscall_num,
-            out(reg) param_1,
-            out(reg) param_2,
-            out(reg) param_3,
-            out(reg) param_4,
-            out(reg) param_5,
-            out(reg) param_6,
-        );
-    }
-
-    match syscall_num {
-        SYSCALL_EXIT => sys_exit(param_1, param_2, param_3, param_4, param_5, param_6),
-        SYSCALL_MMAP => sys_mmap(param_1, param_2, param_3, param_4, param_5 as i64, param_6),
-        _ => panic!("Unknown syscall: {}", syscall_num),
-    };
-    send_eoi();
-}
-
-fn sys_exit<T>(p1: u64, p2: u64, p3: u64, p4: u64, p5: u64, p6: u64) -> Option<T> {
+pub fn sys_exit<T>(p1: u64, p2: u64, p3: u64, p4: u64, p5: u64, p6: u64) -> Option<T> {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;

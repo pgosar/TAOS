@@ -20,7 +20,7 @@ use crate::{
     constants::{
         idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
         memory::PAGE_SIZE,
-        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP, SYSCALL_PRINT},
+        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP},
     },
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
@@ -31,7 +31,7 @@ use crate::{
     },
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-    syscalls::{mmap::sys_mmap, syscall_handlers::{sys_exit, sys_print}},
+    syscalls::{mmap::sys_mmap, syscall_handlers::sys_exit},
 };
 
 lazy_static! {
@@ -203,32 +203,38 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 #[no_mangle]
-#[naked]
 extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
+    let syscall_num: u32;
+    let p1: u64;
+    let p2: u64;
+    let p3: u64;
+    let p4: u64;
+    let p5: u64;
+    let p6: u64;
     unsafe {
-        core::arch::naked_asm!(
-            // Save all registers that might be clobbered
-            "push rax",
-            "push rcx",
-            "push rdx",
-            "push rsi",
-            "push rdi",
-            "push r8",
-            "push r9",
-            "push r10",
-            "call dispatch_syscall",
-            // Restore all registers
-            "pop r10",
-            "pop r9",
-            "pop r8",
-            "pop rdi",
-            "pop rsi",
-            "pop rdx",
-            "pop rcx",
-            "pop rax",
-            "iretq",
-        )
+        core::arch::asm!(
+            "mov {0:r}, rax",
+            "mov {1}, rdi",
+            "mov {2}, rsi",
+            "mov {3}, rdx",
+            "mov {4}, r10",
+            "mov {5}, r9",
+            "mov {6}, r8",
+            out(reg) syscall_num,
+            out(reg) p1,
+            out(reg) p2,
+            out(reg) p3,
+            out(reg) p4,
+            out(reg) p5,
+            out(reg) p6,
+        );
     }
+    match syscall_num {
+        SYSCALL_EXIT => sys_exit(p1, p2, p3, p4, p5, p6),
+        SYSCALL_MMAP => sys_mmap(p1, p2, p3, p4, p5 as i64, p6),
+        _ => panic!("Unknown syscall: {}", syscall_num),
+    };
+    x2apic::send_eoi();
 }
 
 #[naked]

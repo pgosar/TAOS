@@ -5,7 +5,7 @@ use x86_64::{
 };
 
 use crate::{
-    constants::memory::PAGE_SIZE,
+    constants::{memory::PAGE_SIZE, syscalls::START_MMAP_ADDRESS},
     events::{current_running_event_info, EventInfo},
     interrupts::x2apic,
     memory::{
@@ -16,8 +16,7 @@ use crate::{
     serial_println,
 };
 
-pub const START_MMAP_ADDRESS: u64 = 0x9000_0000_000;
-static mut mmap_addr: u64 = START_MMAP_ADDRESS;
+static mut MMAP_ADDR: u64 = START_MMAP_ADDRESS;
 
 #[derive(Clone, Debug)]
 pub struct MmapCall {
@@ -184,7 +183,7 @@ pub fn sys_mmap(
         .get(&pid)
         .expect("Could not get pcb from process table");
     let pcb = process.pcb.get();
-    let begin_addr = unsafe { mmap_addr };
+    let begin_addr = unsafe { MMAP_ADDR };
     let mut mmap_call = MmapCall::new(begin_addr, begin_addr + len, fd, offset);
 
     if begin_addr + offset - 1 >= (*HHDM_OFFSET).as_u64() {
@@ -205,7 +204,7 @@ pub fn sys_mmap(
 fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64, mmap_call: &mut MmapCall) {
     let page_count = len / PAGE_SIZE as u64;
     for _ in 0..page_count {
-        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(mmap_addr)) };
+        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(MMAP_ADDR)) };
         let mut mapper = MAPPER.lock();
         let flags = protection_to_pagetable_flags(prot);
         create_not_present_mapping(page, &mut *mapper, Some(flags));
@@ -219,14 +218,14 @@ fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64, mmap_call: &m
 fn map_memory(len: u64, prot: u64, mmap_call: &mut MmapCall) {
     let page_count = len / PAGE_SIZE as u64;
     for _ in 0..page_count {
-        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(mmap_addr)) };
+        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(MMAP_ADDR)) };
         let mut mapper = MAPPER.lock();
         let flags = protection_to_pagetable_flags(prot);
         create_not_present_mapping(page, &mut *mapper, Some(flags));
         update_permissions(page, &mut *mapper, flags);
         serial_println!("MAPPING MEMORY PAGE {:?}", page);
         mmap_call.loaded.push(false);
-        unsafe { mmap_addr += PAGE_SIZE as u64 };
+        unsafe { MMAP_ADDR += PAGE_SIZE as u64 };
     }
 
     mmap_call.fd = -1;

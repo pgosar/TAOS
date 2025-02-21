@@ -3,7 +3,6 @@ extern crate alloc;
 use crate::{
     constants::processes::MAX_FILES,
     debug,
-    filesys::File,
     interrupts::gdt,
     memory::{
         frame_allocator::{alloc_frame, with_generic_allocator},
