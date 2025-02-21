@@ -15,6 +15,7 @@ use crate::{
         frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
         tlb::tlb_shootdown,
     },
+    serial_println,
 };
 
 use super::HHDM_OFFSET;
@@ -101,6 +102,9 @@ pub fn update_mapping(
     frame: PhysFrame<Size4KiB>,
     flags: Option<PageTableFlags>,
 ) {
+    let mut flags = flags.unwrap_or(PageTableFlags::WRITABLE);
+    flags.set(PageTableFlags::PRESENT, true);
+    // update_permissions(page, mapper, flags);
     let (old_frame, _) = mapper
         .unmap(page)
         .expect("Unmap failed, frame likely was not mapped already");
@@ -110,7 +114,7 @@ pub fn update_mapping(
             mapper.map_to(
                 page,
                 frame,
-                flags.unwrap_or(PageTableFlags::PRESENT),
+                flags,
                 FRAME_ALLOCATOR
                     .lock()
                     .as_mut()
@@ -205,11 +209,16 @@ pub fn create_not_present_mapping(
 ) {
     let frame = create_mapping(page, mapper, flags);
     dealloc_frame(frame);
-    update_permissions(
-        page,
-        mapper,
-        flags.unwrap_or(PageTableFlags::WRITABLE) | !PageTableFlags::PRESENT,
-    );
+
+    let mut flags = flags.unwrap_or(PageTableFlags::WRITABLE);
+
+    if flags.contains(PageTableFlags::PRESENT) {
+        flags.remove(PageTableFlags::PRESENT);
+    }
+
+    serial_println!("Flags: {:?}", flags.contains(PageTableFlags::PRESENT));
+
+    update_permissions(page, mapper, flags);
 }
 
 /// Update permissions for a specific page

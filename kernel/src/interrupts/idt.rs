@@ -176,12 +176,13 @@ extern "x86-interrupt" fn page_fault_handler(
 
     for entry in mmaps.iter_mut() {
         if entry.contains(faulting_address) {
-            let index = faulting_address - entry.start / PAGE_SIZE as u64;
+            serial_println!("Entry start: {}", entry.start);
+            let index = (faulting_address - entry.start) / PAGE_SIZE as u64;
             if !entry.loaded[index as usize] && entry.fd == -1 {
                 entry.loaded[index as usize] = true;
                 let mut mapper = MAPPER.lock();
-                let frame = alloc_frame().expect("Could not allocate frame");
-                update_mapping(page, &mut *mapper, frame, Some(PageTableFlags::PRESENT));
+                create_mapping(page, &mut *mapper, Some(PageTableFlags::PRESENT));
+                break;
             } else if !entry.loaded[index as usize] && entry.fd != -1 {
                 let open_file = pcb.fd_table[entry.fd as usize];
                 entry.loaded[index as usize] = true;

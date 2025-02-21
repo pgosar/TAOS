@@ -144,10 +144,10 @@ pub fn protection_to_pagetable_flags(prot: u64) -> PageTableFlags {
         flags |= PageTableFlags::PRESENT;
     }
     if prot & ProtFlags::PROT_WRITE != 0 {
-        flags |= PageTableFlags::WRITABLE;
+        flags |= PageTableFlags::WRITABLE | PageTableFlags::PRESENT;
     }
     if prot & ProtFlags::PROT_EXEC == 0 {
-        flags |= PageTableFlags::NO_EXECUTE;
+        flags |= PageTableFlags::NO_EXECUTE | PageTableFlags::PRESENT;
     }
 
     flags
@@ -198,21 +198,8 @@ pub fn sys_mmap(
     unsafe {
         (*pcb).mmaps.push(mmap_call);
     }
-    Some(*HHDM_OFFSET)
-}
 
-fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64, mmap_call: &mut MmapCall) {
-    let page_count = len / PAGE_SIZE as u64;
-    for _ in 0..page_count {
-        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(MMAP_ADDR)) };
-        let mut mapper = MAPPER.lock();
-        let flags = protection_to_pagetable_flags(prot);
-        create_not_present_mapping(page, &mut *mapper, Some(flags));
-        update_permissions(page, &mut *mapper, flags);
-    }
-
-    mmap_call.fd = fd;
-    mmap_call.offset = offset;
+    Some(VirtAddr::new(begin_addr))
 }
 
 fn map_memory(len: u64, prot: u64, mmap_call: &mut MmapCall) {
@@ -222,7 +209,6 @@ fn map_memory(len: u64, prot: u64, mmap_call: &mut MmapCall) {
         let mut mapper = MAPPER.lock();
         let flags = protection_to_pagetable_flags(prot);
         create_not_present_mapping(page, &mut *mapper, Some(flags));
-        update_permissions(page, &mut *mapper, flags);
         serial_println!("MAPPING MEMORY PAGE {:?}", page);
         mmap_call.loaded.push(false);
         unsafe { MMAP_ADDR += PAGE_SIZE as u64 };
@@ -230,4 +216,81 @@ fn map_memory(len: u64, prot: u64, mmap_call: &mut MmapCall) {
 
     mmap_call.fd = -1;
     mmap_call.offset = 0;
+}
+
+fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64, mmap_call: &mut MmapCall) {
+    let page_count = len / PAGE_SIZE as u64;
+    for _ in 0..page_count {
+        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(MMAP_ADDR)) };
+        let mut mapper = MAPPER.lock();
+        let flags = protection_to_pagetable_flags(prot);
+        create_not_present_mapping(page, &mut *mapper, Some(flags));
+    }
+
+    mmap_call.fd = fd;
+    mmap_call.offset = offset;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use x86_64::structures::paging::{mapper::TranslateResult, Mapper, Page, PageTableFlags, Size4KiB, Translate};
+
+    use crate::{
+        constants::{memory::PAGE_SIZE, processes::{SYSCALL_BINARY, SYSCALL_MMAP_MEMORY}}, events::schedule_process, memory::MAPPER, processes::process::{create_process, run_process_ring3}, serial, syscalls::mmap::MMAP_ADDR
+    };
+
+    use super::{sys_mmap, MmapFlags, ProtFlags};
+
+    #[test_case]
+    fn test_noprocess_basic_anon_mmap() {
+        let ret = sys_mmap(
+            0x0,
+            0x1000,
+            ProtFlags::PROT_WRITE,
+            MmapFlags::MAP_ANONYMOUS,
+            -1,
+            0,
+        ).expect("Mmap failed");
+
+        create_process(SYSCALL_BINARY);
+
+        // make sure it gave us correct virtual address
+        unsafe { assert_eq!(ret.as_u64(), MMAP_ADDR - PAGE_SIZE as u64) };
+
+        // write to the address and make sure we can
+        unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
+
+        let written_val = unsafe { ret.as_ptr::<u64>().read_volatile() };
+
+        assert_eq!(written_val, 0xdeadbeef);
+    }
+
+    #[test_case]
+    fn test_noprocess_basic_anon_mmap_2() {
+        let ret = sys_mmap(
+            0x0,
+            0x2000,
+            ProtFlags::PROT_WRITE,
+            MmapFlags::MAP_ANONYMOUS,
+            -1,
+            0,
+        ).expect("Mmap failed");
+
+        // make sure it gave us correct virtual address
+        unsafe { assert_eq!(ret.as_u64(), MMAP_ADDR - 2 * PAGE_SIZE as u64) };
+
+        // write to the address and make sure we can
+        unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
+
+        let written_val = unsafe { ret.as_ptr::<u64>().read_volatile() };
+
+        assert_eq!(written_val, 0xdeadbeef);
+    }
+
+    // #[test_case]
+    fn test_basic_anon_mmap() {
+        let pid = create_process(SYSCALL_MMAP_MEMORY);
+        unsafe { schedule_process(0, run_process_ring3(pid), pid) };
+    }
 }
