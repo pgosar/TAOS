@@ -6,6 +6,8 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
+use core::arch::naked_asm;
+
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
@@ -45,7 +47,7 @@ lazy_static! {
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
         idt[SYSCALL_HANDLER]
-            .set_handler_fn(syscall_handler)
+            .set_handler_fn(naked_syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
@@ -160,32 +162,55 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 #[no_mangle]
-extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
-    let syscall_num: u32;
+#[naked]
+pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
+    unsafe {
+        naked_asm!(
+            // Push registers to save them
+            "push rax",
+            "push rdi",
+            "push rsi",
+            "push rdx",
+            "push rcx",
+            "push r8",
+            "push r9",
+            "mov	rdi, rsp",
+            // Call the syscall_handler
+            "call syscall_handler",
+            // Restore registers
+            "pop r9",
+            "pop r8",
+            "pop rcx",
+            "pop rdx",
+            "pop rsi",
+            "pop rdi",
+            "pop rax",
+            "iretq"
+        );
+    }
+}
+
+// This is the actual syscall handler function that reads the registers from the stack
+#[no_mangle]
+fn syscall_handler(rsp: u64) {
+    let syscall_num: u64;
     let p1: u64;
     let p2: u64;
     let p3: u64;
     let p4: u64;
     let p5: u64;
     let p6: u64;
+    let stack_ptr: *const u64 = rsp as *const u64;
     unsafe {
-        core::arch::asm!(
-            "mov {0:r}, rax",
-            "mov {1}, rdi",
-            "mov {2}, rsi",
-            "mov {3}, rdx",
-            "mov {4}, r10",
-            "mov {5}, r9",
-            "mov {6}, r8",
-            out(reg) syscall_num,
-            out(reg) p1,
-            out(reg) p2,
-            out(reg) p3,
-            out(reg) p4,
-            out(reg) p5,
-            out(reg) p6,
-        );
+        syscall_num = *stack_ptr.add(6);
+        p1 = *stack_ptr.add(5);
+        p2 = *stack_ptr.add(4);
+        p3 = *stack_ptr.add(3);
+        p4 = *stack_ptr.add(2);
+        p5 = *stack_ptr.add(1);
+        p6 = *stack_ptr.add(0);
     }
+
     // temporarily, just print the parameter registers
     serial_println!("Parameter 1: {}", p1);
     serial_println!("Parameter 2: {}", p2);
@@ -193,14 +218,15 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
     serial_println!("Parameter 4: {}", p4);
     serial_println!("Parameter 5: {}", p5);
     serial_println!("Parameter 6: {}", p6);
-    match syscall_num {
+
+    match syscall_num as u32 {
         SYSCALL_EXIT => sys_exit(),
         SYSCALL_PRINT => serial_println!("Hello world!"),
         _ => panic!("Unknown syscall: {}", syscall_num),
     };
+
     x2apic::send_eoi();
 }
-
 #[naked]
 #[allow(undefined_naked_function_abi)]
 extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
