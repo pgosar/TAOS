@@ -17,12 +17,16 @@ use x86_64::{
 };
 
 use crate::{
-    constants::idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
+    constants::{
+        idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
+        syscalls::{SYSCALL_EXIT, SYSCALL_PRINT},
+    },
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
     memory::{paging::create_mapping, HHDM_OFFSET},
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
+    syscalls::syscall_handlers::sys_exit,
 };
 
 lazy_static! {
@@ -157,11 +161,43 @@ extern "x86-interrupt" fn page_fault_handler(
 
 #[no_mangle]
 extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
+    let syscall_num: u32;
+    let p1: u64;
+    let p2: u64;
+    let p3: u64;
+    let p4: u64;
+    let p5: u64;
+    let p6: u64;
     unsafe {
-        // I believe we need to save registers
-        core::arch::asm!("push rax", "call dispatch_syscall", "pop rax",);
+        core::arch::asm!(
+            "mov {0:r}, rax",
+            "mov {1}, rdi",
+            "mov {2}, rsi",
+            "mov {3}, rdx",
+            "mov {4}, r10",
+            "mov {5}, r9",
+            "mov {6}, r8",
+            out(reg) syscall_num,
+            out(reg) p1,
+            out(reg) p2,
+            out(reg) p3,
+            out(reg) p4,
+            out(reg) p5,
+            out(reg) p6,
+        );
     }
-
+    // temporarily, just print the parameter registers
+    serial_println!("Parameter 1: {}", p1);
+    serial_println!("Parameter 2: {}", p2);
+    serial_println!("Parameter 3: {}", p3);
+    serial_println!("Parameter 4: {}", p4);
+    serial_println!("Parameter 5: {}", p5);
+    serial_println!("Parameter 6: {}", p6);
+    match syscall_num {
+        SYSCALL_EXIT => sys_exit(),
+        SYSCALL_PRINT => serial_println!("Hello world!"),
+        _ => panic!("Unknown syscall: {}", syscall_num),
+    };
     x2apic::send_eoi();
 }
 
