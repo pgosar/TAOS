@@ -1,6 +1,6 @@
 use crate::{
-    constants::syscalls::{SYSCALL_EXIT, SYSCALL_PRINT},
-    events::{current_running_event_info, EventInfo},
+    constants::syscalls::{SYSCALL_EXIT, SYSCALL_NANOSLEEP, SYSCALL_PRINT},
+    events::{current_running_event_info, nanosleep_current_event, EventInfo},
     processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
     serial_println,
 };
@@ -10,12 +10,19 @@ use crate::interrupts::x2apic;
 #[no_mangle]
 extern "C" fn dispatch_syscall() {
     let syscall_num: u32;
+    let arg1: u64;
     unsafe {
-        core::arch::asm!("mov {0:r}, rax", out(reg) syscall_num);
+        core::arch::asm!(
+            "mov {0:r}, rax",
+            "mov {1}, rbx",
+            out(reg) syscall_num,
+            out(reg) arg1
+        );
     }
 
     match syscall_num {
         SYSCALL_EXIT => sys_exit(),
+        SYSCALL_NANOSLEEP => sys_nanosleep(arg1),
         SYSCALL_PRINT => serial_println!("Hello world!"),
         _ => panic!("Unknown syscall: {}", syscall_num),
     }
@@ -59,4 +66,9 @@ fn sys_exit() {
             in(reg) preemption_info.1
         );
     }
+}
+
+fn sys_nanosleep(nanos: u64) {
+    let cpuid = x2apic::current_core_id() as u32;
+    nanosleep_current_event(cpuid, nanos);
 }

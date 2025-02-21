@@ -1,8 +1,11 @@
 use alloc::{
     boxed::Box,
-    collections::{btree_map::BTreeMap, btree_set::BTreeSet, vec_deque::VecDeque},
+    collections::{
+        binary_heap::BinaryHeap, btree_map::BTreeMap, btree_set::BTreeSet, vec_deque::VecDeque,
+    },
     sync::Arc,
 };
+use futures::Sleep;
 use spin::{mutex::Mutex, rwlock::RwLock};
 use x86_64::instructions::interrupts::without_interrupts;
 
@@ -51,6 +54,7 @@ struct EventRunner {
     event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
     rewake_queue: Arc<EventQueue>,
     pending_events: RwLock<BTreeSet<u64>>,
+    sleeping_events: BinaryHeap<Sleep>,
     current_event: Option<Arc<Event>>,
     event_clock: u64,
     system_clock: u64,
@@ -75,10 +79,12 @@ pub fn schedule_kernel(
     future: impl Future<Output = ()> + 'static + Send,
     priority_level: usize,
 ) {
-    let runners = EVENT_RUNNERS.read();
-    let mut runner = runners.get(&cpuid).expect("No runner found").write();
+    without_interrupts(|| {
+        let runners = EVENT_RUNNERS.read();
+        let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.schedule(future, priority_level, 0);
+        runner.schedule(future, priority_level, 0);
+    });
 }
 
 pub fn schedule_process(
@@ -105,7 +111,7 @@ pub fn register_event_runner(cpuid: u32) {
 
 pub fn current_running_event_pid(cpuid: u32) -> u32 {
     let runners = EVENT_RUNNERS.read();
-    let runner = runners.get(&cpuid).expect("No runner found").write();
+    let runner = runners.get(&cpuid).expect("No runner found").read();
 
     match runner.current_running_event() {
         Some(e) => e.pid,
@@ -115,7 +121,7 @@ pub fn current_running_event_pid(cpuid: u32) -> u32 {
 
 pub fn current_running_event_priority(cpuid: u32) -> usize {
     let runners = EVENT_RUNNERS.read();
-    let runner = runners.get(&cpuid).expect("No runner found").write();
+    let runner = runners.get(&cpuid).expect("No runner found").read();
 
     match runner.current_running_event() {
         Some(e) => e.priority.load(Ordering::Relaxed),
@@ -128,6 +134,20 @@ pub fn inc_runner_clock(cpuid: u32) {
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
     runner.inc_system_clock();
+}
+
+pub fn runner_timestamp(cpuid: u32) -> u64 {
+    let runners = EVENT_RUNNERS.read();
+    let runner = runners.get(&cpuid).expect("No runner found").read();
+
+    runner.system_clock
+}
+
+pub fn nanosleep_current_event(cpuid: u32, nanos: u64) {
+    let runners = EVENT_RUNNERS.read();
+    let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
+    runner.nanosleep_current_event(nanos);
 }
 
 #[derive(Debug)]
