@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use x86_64::{
-    structures::paging::{Page, PageTableFlags, Size4KiB, Translate},
+    structures::paging::{Page, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
@@ -9,12 +9,11 @@ use crate::{
     events::{current_running_event_info, EventInfo},
     interrupts::x2apic,
     memory::{
-        paging::{create_mapping, create_not_present_mapping, update_permissions},
+        paging::{create_not_present_mapping, update_permissions},
         HHDM_OFFSET, MAPPER,
     },
     processes::process::PROCESS_TABLE,
     serial_println,
-    syscalls::mmap,
 };
 
 pub const START_MMAP_ADDRESS: u64 = 0x9000_0000_000;
@@ -163,6 +162,12 @@ pub fn sys_mmap(
     fd: i64,
     offset: u64,
 ) -> Option<VirtAddr> {
+    serial_println!("Address: {}", addr);
+    serial_println!("Len: {}", len);
+    serial_println!("Prot: {}", prot);
+    serial_println!("Flags: {}", flags);
+    serial_println!("FD: {}", fd);
+    serial_println!("Offset: {}", offset);
     // we will currently completely ignore user address requests and do whatever we want
     if len == 0 {
         serial_println!("Zero length mapping");
@@ -189,30 +194,41 @@ pub fn sys_mmap(
     if flags == MmapFlags::MAP_ANONYMOUS {
         map_memory(len, prot, &mut mmap_call);
     } else {
-        allocate_file_memory(len, fd, prot, offset);
+        allocate_file_memory(len, fd, prot, offset, &mut mmap_call);
     }
     unsafe {
-        (*pcb)
-            .mmaps
-            .push(mmap_call);
+        (*pcb).mmaps.push(mmap_call);
     }
     Some(*HHDM_OFFSET)
 }
 
-fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64) {
+fn allocate_file_memory(len: u64, fd: i64, prot: u64, offset: u64, mmap_call: &mut MmapCall) {
     let page_count = len / PAGE_SIZE as u64;
+    for _ in 0..page_count {
+        let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(mmap_addr)) };
+        let mut mapper = MAPPER.lock();
+        let flags = protection_to_pagetable_flags(prot);
+        create_not_present_mapping(page, &mut *mapper, Some(flags));
+        update_permissions(page, &mut *mapper, flags);
+    }
+
+    mmap_call.fd = fd;
+    mmap_call.offset = offset;
 }
 
 fn map_memory(len: u64, prot: u64, mmap_call: &mut MmapCall) {
     let page_count = len / PAGE_SIZE as u64;
-    for i in 0..page_count {
+    for _ in 0..page_count {
         let page: Page<Size4KiB> = unsafe { Page::containing_address(VirtAddr::new(mmap_addr)) };
         let mut mapper = MAPPER.lock();
-        let mut flags = protection_to_pagetable_flags(prot);
+        let flags = protection_to_pagetable_flags(prot);
         create_not_present_mapping(page, &mut *mapper, Some(flags));
         update_permissions(page, &mut *mapper, flags);
         serial_println!("MAPPING MEMORY PAGE {:?}", page);
         mmap_call.loaded.push(false);
         unsafe { mmap_addr += PAGE_SIZE as u64 };
     }
+
+    mmap_call.fd = -1;
+    mmap_call.offset = 0;
 }

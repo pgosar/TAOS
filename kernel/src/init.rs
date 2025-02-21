@@ -10,13 +10,13 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::SYSCALL_BINARY,
+    constants::processes::{RAND_REGS_EXIT, SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},
     logging,
     memory::{self},
-    processes::process::{self, create_process, PROCESS_TABLE},
+    processes::process::{self, create_process, run_process_ring3, PROCESS_TABLE},
     serial_println,
     syscalls::mmap::{sys_mmap, MmapFlags, ProtFlags},
     trace,
@@ -60,20 +60,24 @@ pub fn init() -> u32 {
 
     register_event_runner(bsp_id);
     idt::enable();
-    let pid = create_process(SYSCALL_BINARY);
-    let addr = sys_mmap(
-        0x1000,
-        0x5000,
-        ProtFlags::PROT_WRITE | ProtFlags::PROT_READ,
-        MmapFlags::MAP_ANONYMOUS,
-        -1,
-        0,
-    );
+    // let addr = sys_mmap(
+    //     0x1000,
+    //     0x5000,
+    //     ProtFlags::PROT_WRITE | ProtFlags::PROT_READ,
+    //     MmapFlags::MAP_ANONYMOUS,
+    //     -1,
+    //     0,
+    // );
+    let pid = create_process(RAND_REGS_EXIT);
+    unsafe { schedule_process(bsp_id, run_process_ring3(pid), pid) };
+
     let process_table = PROCESS_TABLE.read();
-    let process = process_table.get(&pid).expect("can't find pcb in process table");
+    let process = process_table
+        .get(&pid)
+        .expect("can't find pcb in process table");
     let pcb = process.pcb.get();
     unsafe {
-    serial_println!("{:?}", *pcb);
+        serial_println!("{:?}", *pcb);
     }
     bsp_id
 }

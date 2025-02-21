@@ -176,26 +176,24 @@ extern "x86-interrupt" fn page_fault_handler(
 
     for entry in mmaps.iter_mut() {
         if entry.contains(faulting_address) {
-            serial_println!("Entry start: {}", entry.start);
-            let index = ((faulting_address - entry.start) / PAGE_SIZE as u64) as usize;
-            let mut mapper = MAPPER.lock();
-            let frame = alloc_frame().expect("Could not allocate frame");
-            entry.loaded[index] = true;
-            update_mapping(
-                page,
-                &mut *mapper,
-                frame,
-                Some(
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::USER_ACCESSIBLE,
-                ),
-            );
-            if !entry.loaded[index] && entry.fd == -1 {
-                break;
-            } else if !entry.loaded[index] && entry.fd != -1 {
-                let _open_file = pcb.fd_table[entry.fd as usize];
-                let _pos = faulting_address - entry.start + entry.offset;
+            let index = faulting_address - entry.start / PAGE_SIZE as u64;
+            if !entry.loaded[index as usize] && entry.fd == -1 {
+                entry.loaded[index as usize] = true;
+                let mut mapper = MAPPER.lock();
+                let frame = alloc_frame().expect("Could not allocate frame");
+                update_mapping(page, &mut *mapper, frame, Some(PageTableFlags::PRESENT));
+            } else if !entry.loaded[index as usize] && entry.fd != -1 {
+                let open_file = pcb.fd_table[entry.fd as usize];
+                entry.loaded[index as usize] = true;
+                let mut mapper = MAPPER.lock();
+                let frame = alloc_frame().expect("Could not allocate frame");
+                update_mapping(
+                    page,
+                    &mut *mapper,
+                    frame,
+                    Some(PageTableFlags::PRESENT | PageTableFlags::WRITABLE),
+                );
+                let pos = faulting_address - entry.start + entry.offset;
                 // figure out where in the file we are
                 // load file content
                 // write content to physmem

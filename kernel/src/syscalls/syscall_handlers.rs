@@ -11,39 +11,47 @@ use crate::interrupts::x2apic;
 #[no_mangle]
 extern "C" fn dispatch_syscall() {
     let syscall_num: u32;
-    let param_1: u64 = 0;
-    let param_2: u64 = 0;
-    let param_3: u64 = 0;
-    let param_4: u64 = 0;
-    let param_5: u64 = 0;
-    let param_6: u64 = 0;
+    // let param_1: u64 = 0;
+    // let param_2: u64 = 0;
+    // let param_3: u64 = 0;
+    // let param_4: u64 = 0;
+    // let param_5: u64 = 0;
+    // let param_6: u64 = 0;
     unsafe {
-        core::arch::asm!(
-            "mov {0}, rax",
-            "mov rdi, {1}",
-            "mov rsi, {2}",
-            "mov rdx, {3}",
-            "mov r10, {4}",
-            "mov r8, {5}",
-            "mov r9, {6}",
-            out(reg) syscall_num,
-            in(reg) param_1,
-            in(reg) param_2,
-            in(reg) param_3,
-            in(reg) param_4,
-            in(reg) param_5,
-            in(reg) param_6,
-        );
-    }
+        core::arch::asm!("mov {0:r}, rax", out(reg) syscall_num)
+    };
+    // unsafe {
+    //     core::arch::asm!(
+    //         "mov {0}, rax",
+            // "mov rdi, {}",
+            // "mov rsi, {}",
+            // "mov rdx, {}",
+            // "mov r10, {}",
+            // "mov r8, {}",
+            // "mov r9, {}",
+            // out(reg) syscall_num,
+            // in(reg) param_1,
+            // in(reg) param_2,
+            // in(reg) param_3,
+            // in(reg) param_4,
+            // in(reg) param_5,
+            // in(reg) param_6,
+        // );
+        // serial_println!("param_1: {}", param_1);
+        // serial_println!("param_2: {}", param_2);
+        // serial_println!("param_3: {}", param_3);
+        // serial_println!("param_4: {}", param_4);
+        // serial_println!("param_5: {}", param_5);
+        // serial_println!("param_6: {}", param_6);
 
     match syscall_num {
         SYSCALL_EXIT => sys_exit(),
-        SYSCALL_MMAP => sys_mmap(param_1, param_2, param_3, param_4, param_5 as i64, param_6),
+        // SYSCALL_MMAP => sys_mmap(param_1, param_2, param_3, param_4, param_5 as i64, param_6),
         _ => panic!("Unknown syscall: {}", syscall_num),
     };
 }
 
-fn sys_exit<T>() -> Option<T> {
+fn sys_exit() {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;
@@ -81,5 +89,4 @@ fn sys_exit<T>() -> Option<T> {
             in(reg) preemption_info.1
         );
     }
-    None
 }
