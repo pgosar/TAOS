@@ -1,14 +1,10 @@
 extern crate alloc;
 
 use crate::{
-    debug,
-    interrupts::gdt,
-    memory::{
+    constants::processes::PROCESS_NANOS, debug, events::runner_timestamp, interrupts::{gdt, x2apic::nanos_to_ticks}, memory::{
         frame_allocator::{alloc_frame, with_generic_allocator},
         HHDM_OFFSET, MAPPER,
-    },
-    processes::{loader::load_elf, registers::Registers},
-    serial_println,
+    }, processes::{loader::load_elf, registers::Registers}, serial_println
 };
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
@@ -41,6 +37,7 @@ pub struct PCB {
     pub state: ProcessState,
     pub kernel_rsp: u64,
     pub kernel_rip: u64,
+    pub next_preemption_time: u64,
     pub registers: Registers,
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
 }
@@ -120,6 +117,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
         state: ProcessState::New,
         kernel_rsp: 0,
         kernel_rip: 0,
+        next_preemption_time: 0,
         registers: Registers {
             rax: 0,
             rbx: 0,
@@ -250,6 +248,8 @@ pub async unsafe fn run_process_ring3(pid: u32) {
     // Once kernel threads are in, will need lock around PCB
     // But not TCB
     let process = process.pcb.get();
+
+    (*process).next_preemption_time = runner_timestamp() + nanos_to_ticks(PROCESS_NANOS);
 
     Cr3::write((*process).pml4_frame, Cr3Flags::empty());
 

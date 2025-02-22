@@ -1,11 +1,7 @@
 use crate::{
-    constants::syscalls::{SYSCALL_EXIT, SYSCALL_NANOSLEEP, SYSCALL_PRINT},
-    events::{current_running_event_info, nanosleep_current_event, EventInfo},
-    processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
-    serial_println,
+    constants::syscalls::{SYSCALL_EXIT, SYSCALL_NANOSLEEP, SYSCALL_PRINT}, debug, events::{current_running_event_info, nanosleep_current_event, EventInfo}, processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE}, serial_println
 };
 
-use crate::interrupts::x2apic;
 
 #[no_mangle]
 extern "C" fn dispatch_syscall() {
@@ -31,14 +27,13 @@ extern "C" fn dispatch_syscall() {
 fn sys_exit() {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
-    let cpuid: u32 = x2apic::current_core_id() as u32;
-    let event: EventInfo = current_running_event_info(cpuid);
+    let event: EventInfo = current_running_event_info();
 
     if event.pid == 0 {
         panic!("Calling exit from outside of process");
     }
 
-    serial_println!("Process {} exit", event.pid);
+    debug!("Process {} exit", event.pid);
 
     // Get PCB from PID
     let preemption_info = unsafe {
@@ -69,6 +64,5 @@ fn sys_exit() {
 }
 
 fn sys_nanosleep(nanos: u64) {
-    let cpuid = x2apic::current_core_id() as u32;
-    nanosleep_current_event(cpuid, nanos);
+    nanosleep_current_event(nanos);
 }

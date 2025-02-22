@@ -14,10 +14,7 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::constants::{
-    events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY},
-    x2apic::CPU_FREQUENCY,
-};
+use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, interrupts::x2apic::nanos_to_ticks};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
@@ -133,7 +130,7 @@ impl EventRunner {
     pub fn nanosleep_current_event(&mut self, nanos: u64) -> Option<Sleep> {
         without_interrupts(|| {
             self.current_event.as_ref().map(|e| {
-                let system_ticks = (nanos * CPU_FREQUENCY as u64) / 1_000_000_000;
+                let system_ticks = nanos_to_ticks(nanos);
 
                 let sleep = Sleep::new(self.system_clock + system_ticks, (*e).clone());
                 self.sleeping_events.push(sleep.clone());

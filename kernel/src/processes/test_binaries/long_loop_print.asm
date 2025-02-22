@@ -11,5 +11,5 @@ _loop:
     jg _loop
 
     int 0x80
-    mov rax, 1
+    mov rax, 60
     int 0x80

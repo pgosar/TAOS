@@ -15,7 +15,7 @@ use core::{
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
-use crate::constants::events::NUM_EVENT_PRIORITIES;
+use crate::{constants::events::NUM_EVENT_PRIORITIES, interrupts::x2apic, processes::process::run_process_ring3};
 
 mod event;
 mod event_runner;
@@ -75,10 +75,11 @@ pub unsafe fn run_loop(cpuid: u32) -> ! {
 }
 
 pub fn schedule_kernel(
-    cpuid: u32,
     future: impl Future<Output = ()> + 'static + Send,
     priority_level: usize,
 ) {
+    let cpuid = x2apic::current_core_id() as u32;
+
     without_interrupts(|| {
         let runners = EVENT_RUNNERS.read();
         let mut runner = runners.get(&cpuid).expect("No runner found").write();
@@ -88,19 +89,23 @@ pub fn schedule_kernel(
 }
 
 pub fn schedule_process(
-    cpuid: u32,
-    future: impl Future<Output = ()> + 'static + Send,
     pid: u32, // 0 as kernel/sentinel
 ) {
+    let cpuid = x2apic::current_core_id() as u32;
+
     without_interrupts(|| {
         let runners = EVENT_RUNNERS.read();
         let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-        runner.schedule(future, NUM_EVENT_PRIORITIES - 1, pid);
+        unsafe {
+            runner.schedule(run_process_ring3(pid), NUM_EVENT_PRIORITIES - 1, pid);
+        }
     });
 }
 
-pub fn register_event_runner(cpuid: u32) {
+pub fn register_event_runner() {
+    let cpuid = x2apic::current_core_id() as u32;
+
     without_interrupts(|| {
         let runner = EventRunner::init();
         let mut write_lock = EVENT_RUNNERS.write();
@@ -109,7 +114,8 @@ pub fn register_event_runner(cpuid: u32) {
     });
 }
 
-pub fn current_running_event_pid(cpuid: u32) -> u32 {
+pub fn current_running_event_pid() -> u32 {
+    let cpuid = x2apic::current_core_id() as u32;
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").read();
 
@@ -119,7 +125,8 @@ pub fn current_running_event_pid(cpuid: u32) -> u32 {
     }
 }
 
-pub fn current_running_event_priority(cpuid: u32) -> usize {
+pub fn current_running_event_priority() -> usize {
+    let cpuid = x2apic::current_core_id() as u32;
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").read();
 
@@ -129,21 +136,26 @@ pub fn current_running_event_priority(cpuid: u32) -> usize {
     }
 }
 
-pub fn inc_runner_clock(cpuid: u32) {
+pub fn inc_runner_clock() {
+    let cpuid = x2apic::current_core_id() as u32;
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
     runner.inc_system_clock();
 }
 
-pub fn runner_timestamp(cpuid: u32) -> u64 {
+pub fn runner_timestamp() -> u64 {
+    let cpuid = x2apic::current_core_id() as u32;
+
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").read();
 
     runner.system_clock
 }
 
-pub fn nanosleep_current_event(cpuid: u32, nanos: u64) -> Option<Sleep> {
+pub fn nanosleep_current_event(nanos: u64) -> Option<Sleep> {
+    let cpuid = x2apic::current_core_id() as u32;
+
     let runners = EVENT_RUNNERS.read();
     let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
@@ -156,10 +168,9 @@ pub struct EventInfo {
     pub pid: u32,
 }
 
-// im gonna double check the place where i called create process, it might just be cpu id
+pub fn current_running_event_info() -> EventInfo {
+    let cpuid = x2apic::current_core_id() as u32;
 
-// most likely it isn't finding any event
-pub fn current_running_event_info(cpuid: u32) -> EventInfo {
     let runners = EVENT_RUNNERS.read();
     let runner = runners.get(&cpuid).expect("No runner found").write();
 

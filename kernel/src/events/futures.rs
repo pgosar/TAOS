@@ -5,7 +5,6 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::interrupts::x2apic;
 use futures::task::ArcWake;
 
 use super::{runner_timestamp, Event};
@@ -56,8 +55,7 @@ impl Future for Sleep {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        let cpuid = x2apic::current_core_id() as u32;
-        let system_time = runner_timestamp(cpuid);
+        let system_time = runner_timestamp();
 
         if self.target_timestamp <= system_time {
             Poll::Ready(())
