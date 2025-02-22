@@ -4,7 +4,7 @@
 //! - Represents each frame in physical memory as a bit and stores metadata to check against memory leaks
 use crate::{
     constants::memory::{BITMAP_ENTRY_SIZE, FRAME_SIZE, FULL_BITMAP_ENTRY, KERNEL_STACK_SIZE},
-    memory::HHDM_OFFSET,
+    memory::{HHDM_OFFSET, KERNEL_STACK_START},
     serial_println,
 };
 use limine::{memory_map::EntryType, request::StackSizeRequest, response::MemoryMapResponse};
@@ -13,7 +13,6 @@ use x86_64::{
     PhysAddr,
 };
 
-use crate::KERNEL_STACK_START;
 use alloc::{boxed::Box, vec, vec::Vec};
 
 #[used]

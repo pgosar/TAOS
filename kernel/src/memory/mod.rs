@@ -41,6 +41,9 @@ lazy_static! {
     );
 }
 
+/// The starting virtual address of the kernel stack
+pub static mut KERNEL_STACK_START: u64 = 0;
+
 /// Initializes the global frame allocator and kernel heap
 ///
 /// * `cpu_id`: The CPU to initialize for. We only want to initialize a frame allocator for cpuid 0
