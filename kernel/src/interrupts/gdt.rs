@@ -45,7 +45,7 @@ lazy_static! {
     /// Each TSS contains:
     /// - Interrupt Stack Table (IST) for handling exceptions
     /// - Kernel stack pointer (RSP0) for privilege level changes
-    static ref TSSS: [TaskStateSegment; MAX_CORES] = {
+    pub static ref TSSS: [TaskStateSegment; MAX_CORES] = {
         static mut DF_STACKS: [[u8; IST_STACK_SIZE]; MAX_CORES] = [[0; IST_STACK_SIZE]; MAX_CORES];
         static mut PRIV_STACKS: [[u8; RING0_STACK_SIZE]; MAX_CORES] = [[0; RING0_STACK_SIZE]; MAX_CORES];
 
