@@ -1,14 +1,10 @@
 use crate::{
-    debug, 
-    events::{
+    debug, events::{
         current_running_event_info, 
         nanosleep_current_event, 
         EventInfo
-    }, 
-    processes::process::{
-        clear_process_frames, 
-        ProcessState, 
-        PROCESS_TABLE
+    }, interrupts::x2apic, processes::process::{
+        clear_process_frames, preempt_process, ProcessState, PROCESS_TABLE
     }
 };
 
@@ -52,8 +48,11 @@ pub fn sys_exit() {
     }
 }
 
-fn sys_nanosleep(nanos: u64) {
+pub fn sys_nanosleep(nanos: u64, rsp: u64) {
     nanosleep_current_event(nanos);
     
-    todo!() // Preempt and yield
+    // Preempt and yield
+    preempt_process(rsp);
+    x2apic::send_eoi();
+    return;
 }

@@ -14,7 +14,7 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, interrupts::x2apic::nanos_to_ticks};
+use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, interrupts::x2apic::nanos_to_ticks, serial_println};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
@@ -123,6 +123,7 @@ impl EventRunner {
             let future = sleeper.unwrap();
             if future.target_timestamp <= self.system_clock {
                 future.awake();
+                self.sleeping_events.pop();
             }
         }
     }

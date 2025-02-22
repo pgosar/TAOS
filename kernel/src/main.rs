@@ -41,29 +41,29 @@ extern "C" fn _start() -> ! {
 
     debug!("BSP entering event loop");
 
-    let pid = create_process(PRINT_AND_SLEEP);
-    schedule_process(pid);
+    // let pid = create_process(PRINT_AND_SLEEP);
+    // schedule_process(pid);
 
-    // schedule_kernel(async move {
-    //     serial_println!("Sleeping");
-    //     let sleep = nanosleep_current_event(10_000_000_000);
-    //     if sleep.is_some() {
-    //         sleep.unwrap().await;
-    //     }
-    //     serial_println!("Woke up");
-    // }, 0);
+    schedule_kernel(async move {
+        serial_println!("Sleeping");
+        let sleep = nanosleep_current_event(10_000_000_000);
+        if sleep.is_some() {
+            sleep.unwrap().await;
+        }
+        serial_println!("Woke up");
+    }, 0);
 
-    // schedule_kernel(async move {
-    //     serial_println!("Sleeping 2");
-    //     let sleep = nanosleep_current_event(5_000_000_000);
-    //     if sleep.is_some() {
-    //         sleep.unwrap().await;
-    //     }
-    //     serial_println!("Woke up 2");
-    // }, 0);
+    schedule_kernel(async move {
+        serial_println!("Sleeping 2");
+        let sleep = nanosleep_current_event(5_000_000_000);
+        if sleep.is_some() {
+            sleep.unwrap().await;
+        }
+        serial_println!("Woke up 2");
+    }, 0);
 
-    let pid2 = create_process(LONG_LOOP);
-    schedule_process(pid2);
+    // let pid2 = create_process(LONG_LOOP);
+    // schedule_process(pid2);
 
     unsafe { run_loop(bsp_id) }
 }
