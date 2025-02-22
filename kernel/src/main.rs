@@ -7,11 +7,13 @@
 #![test_runner(taos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+use core::arch::asm;
+
 use limine::request::{RequestsEndMarker, RequestsStartMarker};
 use taos::events::run_loop;
 
 extern crate alloc;
-use taos::{debug, serial_println};
+use taos::{debug, serial_println, KERNEL_STACK_START};
 
 /// Marks the start of Limine boot protocol requests.
 #[used]
@@ -33,6 +35,9 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 /// - Must never return
 #[no_mangle]
 extern "C" fn _start() -> ! {
+    unsafe {
+        asm!("mov {}, rsp", out(reg) KERNEL_STACK_START);
+    }
     let bsp_id = taos::init::init();
     #[cfg(test)]
     test_main();

@@ -29,6 +29,8 @@ pub mod prelude {
     pub use crate::{debug_print, debug_println, serial_print, serial_println};
 }
 
+pub static mut KERNEL_STACK_START: u64 = 0;
+
 #[macro_export]
 macro_rules! debug_print {
     ($($arg:tt)*) => {

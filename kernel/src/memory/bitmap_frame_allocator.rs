@@ -3,18 +3,24 @@
 //! - Another allocator kernel switches into once kernel heap is initialized
 //! - Represents each frame in physical memory as a bit and stores metadata to check against memory leaks
 use crate::{
-    constants::memory::{BITMAP_ENTRY_SIZE, FRAME_SIZE, FULL_BITMAP_ENTRY},
+    constants::memory::{BITMAP_ENTRY_SIZE, FRAME_SIZE, FULL_BITMAP_ENTRY, KERNEL_STACK_SIZE},
+    memory::HHDM_OFFSET,
     serial_println,
 };
-use limine::{memory_map::EntryType, response::MemoryMapResponse};
+use limine::{memory_map::EntryType, request::StackSizeRequest, response::MemoryMapResponse};
 use x86_64::{
     structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
     PhysAddr,
 };
 
+use crate::KERNEL_STACK_START;
 use alloc::{boxed::Box, vec, vec::Vec};
 
-// Holds bitmapand metadata for allocator
+#[used]
+#[link_section = ".requests"]
+static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(KERNEL_STACK_SIZE);
+
+// Holds bitmap and metadata for allocator
 pub struct BitmapFrameAllocator {
     // Total frames usable in physical memory
     total_frames: usize,
@@ -78,6 +84,15 @@ impl BitmapFrameAllocator {
         for frame in initial_frames_vec {
             allocator.mark_frame_used(frame);
         }
+
+        // Allocate the kernel stack
+        let start_addr = KERNEL_STACK_START - HHDM_OFFSET.as_u64();
+        let end_addr = start_addr + KERNEL_STACK_SIZE;
+        for addr in (start_addr..end_addr).step_by(FRAME_SIZE) {
+            let frame = PhysFrame::containing_address(PhysAddr::new(addr));
+            allocator.mark_frame_used(frame);
+        }
+
         allocator
     }
 

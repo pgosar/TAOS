@@ -6,6 +6,9 @@ pub const PAGE_SIZE: usize = 4096;
 /// Size of a physical memory frame in bytes.
 pub const FRAME_SIZE: usize = 4096;
 
+/// Kernel stack size (1 MB)
+pub const KERNEL_STACK_SIZE: u64 = 1024 * 1024;
+
 /// Starting virtual address of the kernel heap.
 pub const HEAP_START: *mut u8 = 0x_FFFF_8100_0000_0000 as *mut u8;
 
