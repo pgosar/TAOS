@@ -168,22 +168,22 @@ pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
         naked_asm!(
             // Push registers to save them
             "push rax",
-            "push rdi",
-            "push rsi",
-            "push rdx",
+            "push rbx",
             "push rcx",
-            "push r8",
-            "push r9",
-            "mov	rdi, rsp",
+            "push rdx",
+            "push rsi",
+            "push rdi",
+            "push rbp",
+            "mov rdi, rsp",
             // Call the syscall_handler
             "call syscall_handler",
             // Restore registers
-            "pop r9",
-            "pop r8",
-            "pop rcx",
-            "pop rdx",
-            "pop rsi",
+            "pop rbp",
             "pop rdi",
+            "pop rsi",
+            "pop rdx",
+            "pop rcx",
+            "pop rbx",
             "pop rax",
             "iretq"
         );

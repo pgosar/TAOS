@@ -102,7 +102,7 @@ lazy_static! {
 /// Collection of segment selectors for kernel and user segments, plus TSS selectors.
 #[derive(Debug)]
 pub struct Selectors {
-    code_selector: SegmentSelector,
+    pub code_selector: SegmentSelector,
     data_selector: SegmentSelector,
     pub user_code_selector: SegmentSelector,
     pub user_data_selector: SegmentSelector,

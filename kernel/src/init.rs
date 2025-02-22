@@ -10,7 +10,7 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::SYSCALL_BINARY,
+    constants::processes::{SYSCALL_32BIT_TEST, SYSCALL_64BIT_TEST, SYSCALL_BINARY},
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},
@@ -59,7 +59,7 @@ pub fn init() -> u32 {
     register_event_runner(bsp_id);
     idt::enable();
 
-    let pid = create_process(SYSCALL_BINARY);
+    let pid = create_process(SYSCALL_64BIT_TEST);
     unsafe {
         schedule_process(bsp_id, run_process_ring3(pid), pid);
     }
