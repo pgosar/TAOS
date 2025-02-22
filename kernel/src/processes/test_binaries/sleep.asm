@@ -2,7 +2,7 @@ section .text
     global _start
 
 _start:
-    mov rax, 1
+    mov rax, 3
     int 0x80
 
     mov rbx, 5000000000

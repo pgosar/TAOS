@@ -65,4 +65,6 @@ fn sys_exit() {
 
 fn sys_nanosleep(nanos: u64) {
     nanosleep_current_event(nanos);
+    
+    todo!() // Preempt and yield
 }
