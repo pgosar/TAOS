@@ -13,7 +13,7 @@ use limine::request::{RequestsEndMarker, RequestsStartMarker};
 use taos::events::run_loop;
 
 extern crate alloc;
-use taos::{debug, serial_println, KERNEL_STACK_START};
+use taos::{debug, memory::KERNEL_STACK_START, serial_println};
 
 /// Marks the start of Limine boot protocol requests.
 #[used]
