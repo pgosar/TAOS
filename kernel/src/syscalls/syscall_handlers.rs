@@ -1,30 +1,19 @@
 use crate::{
-    constants::syscalls::{SYSCALL_EXIT, SYSCALL_NANOSLEEP, SYSCALL_PRINT}, debug, events::{current_running_event_info, nanosleep_current_event, EventInfo}, processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE}, serial_println
+    debug, 
+    events::{
+        current_running_event_info, 
+        nanosleep_current_event, 
+        EventInfo
+    }, 
+    processes::process::{
+        clear_process_frames, 
+        ProcessState, 
+        PROCESS_TABLE
+    }
 };
 
 
-#[no_mangle]
-extern "C" fn dispatch_syscall() {
-    let syscall_num: u32;
-    let arg1: u64;
-    unsafe {
-        core::arch::asm!(
-            "mov {0:r}, rax",
-            "mov {1}, rbx",
-            out(reg) syscall_num,
-            out(reg) arg1
-        );
-    }
-
-    match syscall_num {
-        SYSCALL_EXIT => sys_exit(),
-        SYSCALL_NANOSLEEP => sys_nanosleep(arg1),
-        SYSCALL_PRINT => serial_println!("Hello world!"),
-        _ => panic!("Unknown syscall: {}", syscall_num),
-    }
-}
-
-fn sys_exit() {
+pub fn sys_exit() {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let event: EventInfo = current_running_event_info();

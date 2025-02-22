@@ -44,6 +44,7 @@ static CPU_COUNT: AtomicU64 = AtomicU64::new(0);
 pub fn init() -> u32 {
     assert!(BASE_REVISION.is_supported());
     interrupts::init(0);
+
     memory::init(0);
     devices::init(0);
     // Should be kept after devices in case logging gets complicated
