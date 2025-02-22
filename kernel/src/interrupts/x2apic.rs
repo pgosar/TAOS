@@ -26,6 +26,7 @@ const X2APIC_LVT_TIMER: u32 = 0x832;
 const X2APIC_TIMER_ICR: u32 = 0x838;
 const X2APIC_TIMER_CCR: u32 = 0x839;
 const X2APIC_TIMER_DCR: u32 = 0x83E;
+const X2APIC_IA32_EFER: u32 = 0xC000_0080;
 const X2APIC_IA32_LSTAR: u32 = 0xC000_0082;
 const X2APIC_IA32_FMASK: u32 = 0xC000_0084;
 const X2APIC_IA32_STAR: u32 = 0xC000_0081;
@@ -152,7 +153,10 @@ impl X2ApicManager {
             Msr::new(X2APIC_IA32_LSTAR).write(syscall_han as u64);
             Msr::new(X2APIC_IA32_FMASK).write(fmask);
             Msr::new(X2APIC_IA32_STAR).write(star);
+            let val = Msr::new(X2APIC_IA32_EFER).read();
+            Msr::new(X2APIC_IA32_EFER).write(val | 1);
         }
+
 
         Ok(())
     }

@@ -103,7 +103,7 @@ lazy_static! {
 #[derive(Debug)]
 pub struct Selectors {
     pub code_selector: SegmentSelector,
-    data_selector: SegmentSelector,
+    pub data_selector: SegmentSelector,
     pub user_code_selector: SegmentSelector,
     pub user_data_selector: SegmentSelector,
     tss_selectors: [SegmentSelector; MAX_CORES],
