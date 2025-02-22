@@ -83,6 +83,7 @@ impl Default for X2ApicManager {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct SyscallRegisters {
     pub number: u64, // syscall number (originally in rax)
     pub arg1: u64,   // originally in rdi
@@ -142,7 +143,6 @@ pub extern "C" fn syscall_han() -> ! {
 
             // Prepare for sysretq to return to user space
             "sysretq",
-            // kernel_stack_top = const 16
         )
     };
 }
@@ -150,7 +150,7 @@ pub extern "C" fn syscall_han() -> ! {
 #[no_mangle]
 fn syscall_handler_impl(regs: *const SyscallRegisters) {
     let regs = unsafe { &*regs };
-    serial_println!("HANDLER, {}", { regs.number });
+    serial_println!("HANDLER, {:#?}", { regs });
 }
 
 
