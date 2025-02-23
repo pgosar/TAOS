@@ -220,7 +220,7 @@ fn syscall_handler(rsp: u64) {
     serial_println!("Parameter 6: {}", p6);
 
     match syscall_num as u32 {
-        SYSCALL_EXIT => sys_exit(),
+        SYSCALL_EXIT => sys_exit(p1),
         SYSCALL_PRINT => serial_println!("Hello world!"),
         _ => panic!("Unknown syscall: {}", syscall_num),
     };
