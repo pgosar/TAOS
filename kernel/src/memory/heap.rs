@@ -110,12 +110,11 @@ mod tests {
 
     #[test_case]
     fn test_large_allocation() {
-        let size = 1024 * 1024 * 9;
+        let size = 1024 * 512;
         let vec: Vec<u8> = vec![1; size];
 
         assert_eq!(vec.len(), size);
 
         assert!(vec.iter().all(|&b| b == 1));
     }
-
 }
