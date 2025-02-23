@@ -63,10 +63,9 @@ fn switch_allocator() {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use alloc::{vec, boxed::Box, vec::Vec, string::String};
+    use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
     #[test_case]
     fn test_basic_heap_alloc() {
