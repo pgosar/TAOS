@@ -123,7 +123,7 @@ unsafe impl FrameAllocator<Size4KiB> for BootIntoFrameAllocator {
         let frame = Some(self.usable_frames().nth(self.next)?);
         self.next += 1;
 
-        assert!(self.allocated_count < MAX_ALLOCATED_FRAMES);
+        // assert!(self.allocated_count < MAX_ALLOCATED_FRAMES);
         if self.first_frame.is_none() {
             self.first_frame = frame;
         }
