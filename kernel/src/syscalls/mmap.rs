@@ -158,17 +158,14 @@ pub fn sys_mmap(
     fd: i64,
     offset: u64,
 ) -> Option<VirtAddr> {
-    serial_println!("Address: {}", addr);
-    serial_println!("Len: {}", len);
-    serial_println!("Prot: {}", prot);
-    serial_println!("Flags: {}", flags);
-    serial_println!("FD: {}", fd);
-    serial_println!("Offset: {}", offset);
     // we will currently completely ignore user address requests and do whatever we want
     if len == 0 {
         serial_println!("Zero length mapping");
         panic!();
         // return something
+    }
+    unsafe {
+        serial_println!("MMAP ADDR: {:#X}", { MMAP_ADDR });
     }
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
@@ -181,6 +178,9 @@ pub fn sys_mmap(
         .expect("Could not get pcb from process table");
     let pcb = process.pcb.get();
     let mut begin_addr = unsafe { MMAP_ADDR };
+    // We must return the original beginning address while adjusting the value of MMAP_ADDR
+    // for the next calls to MMAP
+    let addr_to_return = begin_addr;
     let mut mmap_call = MmapCall::new(begin_addr, begin_addr + len, fd, offset);
 
     if begin_addr + offset > (*HHDM_OFFSET).as_u64() {
@@ -196,7 +196,10 @@ pub fn sys_mmap(
         (*pcb).mmaps.push(mmap_call);
     }
 
-    Some(VirtAddr::new(begin_addr))
+    unsafe {
+        MMAP_ADDR = begin_addr;
+    }
+    Some(VirtAddr::new(addr_to_return))
 }
 
 fn map_memory(begin_addr: &mut u64, len: u64, prot: u64, mmap_call: &mut MmapCall) {
@@ -253,6 +256,7 @@ mod tests {
 
     #[test_case]
     fn test_noprocess_basic_anon_mmap() {
+        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
         let ret = sys_mmap(
             0x0,
             0x1000,
@@ -266,10 +270,15 @@ mod tests {
         create_process(SYSCALL_BINARY);
 
         // make sure it gave us correct virtual address
-        unsafe { serial_println!("RET: {:?}", MMAP_ADDR - PAGE_SIZE as u64) };
-        unsafe { assert_eq!(ret.as_u64(), MMAP_ADDR - PAGE_SIZE as u64) };
+        // we should have added 0x1000 to MMAP_ADDR
+        unsafe { assert_eq!(MMAP_ADDR - 0x1000, mmap_addr_before) };
+
+        // The return value must be the original beginning address
+        // This should be the current MMAP_ADDR - 0x1000
+        unsafe { assert_eq!({ MMAP_ADDR - 0x1000 }, ret.as_u64()) };
 
         // write to the address and make sure we can
+        serial_println!("WRITING TO {:#X}", mmap_addr_before);
         unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
 
         let written_val = unsafe { ret.as_ptr::<u64>().read_volatile() };
@@ -279,6 +288,23 @@ mod tests {
 
     #[test_case]
     fn test_noprocess_basic_anon_mmap_2() {
+        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
+        sys_mmap(
+            0x0,
+            0x1000,
+            ProtFlags::PROT_WRITE,
+            MmapFlags::MAP_ANONYMOUS,
+            -1,
+            0,
+        )
+        .expect("Mmap failed");
+
+        // since there was one mmap before this, we should see that mmap_before is one 0x1000
+        // above its initial declaration
+        unsafe { assert_eq!(MMAP_ADDR - PAGE_SIZE as u64, mmap_addr_before) };
+
+        // Reset mmap_before
+        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
         let ret = sys_mmap(
             0x0,
             0x2000,
@@ -292,7 +318,12 @@ mod tests {
         create_process(SYSCALL_BINARY);
 
         // make sure it gave us correct virtual address
-        unsafe { assert_eq!(ret.as_u64(), MMAP_ADDR - 2 * PAGE_SIZE as u64) };
+        // we should have added 0x2000 to MMAP_ADDR
+        unsafe { assert_eq!(MMAP_ADDR - 0x2000, mmap_addr_before) };
+
+        // The return value must be the original beginning address
+        // This should be the current MMAP_ADDR - 0x2000
+        unsafe { assert_eq!({ MMAP_ADDR - 0x2000_u64 }, ret.as_u64()) };
 
         // write to the address and make sure we can
         unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
