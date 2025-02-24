@@ -352,7 +352,7 @@ mod tests {
 
         update_permissions(page, &mut *mapper, flags);
 
-        let pte = unsafe { get_page_table_entry(page, &mut *mapper) }.expect("Getting PTE Failed");
+        let pte = unsafe { get_page_table_entry(page, &mapper) }.expect("Getting PTE Failed");
 
         assert!(pte.flags().contains(PageTableFlags::PRESENT));
         assert!(!pte.flags().contains(PageTableFlags::WRITABLE));
