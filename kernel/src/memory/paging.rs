@@ -216,8 +216,6 @@ pub fn create_not_present_mapping(
         flags.remove(PageTableFlags::PRESENT);
     }
 
-    serial_println!("Flags: {:?}", flags.contains(PageTableFlags::PRESENT));
-
     update_permissions(page, mapper, flags);
 }
 
