@@ -6,7 +6,7 @@ use alloc::{
 };
 use futures::task::waker_ref;
 use spin::rwlock::RwLock;
-use x86_64::instructions::interrupts::{self, without_interrupts};
+use x86_64::instructions::interrupts;
 
 use core::{
     future::Future,
@@ -14,13 +14,12 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, interrupts::x2apic::nanos_to_ticks, serial_println};
+use crate::{constants::events::{NUM_EVENT_PRIORITIES, PRIORITY_INC_DELAY}, interrupts::x2apic::nanos_to_ticks};
 
 impl EventRunner {
     pub fn init() -> EventRunner {
         EventRunner {
-            event_queues: core::array::from_fn(|_| RwLock::new(VecDeque::new())),
-            rewake_queue: Arc::new(RwLock::new(VecDeque::new())),
+            event_queues: core::array::from_fn(|_| Arc::new(RwLock::new(VecDeque::new()))),
             pending_events: RwLock::new(BTreeSet::new()),
             sleeping_events: BinaryHeap::new(),
             current_event: None,
@@ -94,7 +93,7 @@ impl EventRunner {
         } else {
             let event = Arc::new(Event::init(
                 future,
-                self.rewake_queue.clone(),
+                self.event_queues[priority_level].clone(),
                 priority_level,
                 pid,
                 self.event_clock,
@@ -129,16 +128,45 @@ impl EventRunner {
     }
 
     pub fn nanosleep_current_event(&mut self, nanos: u64) -> Option<Sleep> {
-        without_interrupts(|| {
-            self.current_event.as_ref().map(|e| {
-                let system_ticks = nanos_to_ticks(nanos);
+        self.current_event.as_ref().map(|e| {
+            let system_ticks = nanos_to_ticks(nanos);
 
-                let sleep = Sleep::new(self.system_clock + system_ticks, (*e).clone());
-                self.sleeping_events.push(sleep.clone());
+            let sleep = Sleep::new(self.system_clock + system_ticks, (*e).clone());
+            self.sleeping_events.push(sleep.clone());
 
-                sleep
-            })
+            sleep
         })
+    }
+
+    pub fn nanosleep_event(
+        &mut self, 
+        future: impl Future<Output = ()> + 'static + Send,
+        priority_level: usize,
+        pid: u32,
+        nanos: u64
+    ) -> Option<Sleep> {
+        if priority_level >= NUM_EVENT_PRIORITIES {
+            panic!("Invalid event priority: {}", priority_level);
+        } else {
+            let event = Arc::new(Event::init(
+                future,
+                self.event_queues[priority_level].clone(),
+                priority_level,
+                pid,
+                self.event_clock,
+            ));
+
+            let system_ticks = nanos_to_ticks(nanos);
+
+            let sleep = Sleep::new(self.system_clock + system_ticks, event.clone());
+            self.sleeping_events.push(sleep.clone());
+
+            let mut write_lock = self.pending_events.write();
+
+            write_lock.insert(event.eid.0);
+
+            Some(sleep)
+        }
     }
 
     fn have_pending_events(&self) -> bool {
@@ -146,17 +174,13 @@ impl EventRunner {
     }
 
     fn have_unblocked_events(&self) -> bool {
-        if !self.rewake_queue.read().is_empty() {
-            true
-        } else {
-            for queue in self.event_queues.iter() {
-                if !queue.read().is_empty() {
-                    return true;
-                }
+        for queue in self.event_queues.iter() {
+            if !queue.read().is_empty() {
+                return true;
             }
-
-            false
         }
+
+        false
     }
 
     fn contains_event(&self, eid: EventId) -> bool {
@@ -187,8 +211,8 @@ impl EventRunner {
                     let event_to_move = Self::try_pop(&self.event_queues[i]);
                     event_to_move.inspect(|e| {
                         Self::enqueue(&self.event_queues[i - 1], e.clone());
-
-                        e.priority.swap(i - 1, Ordering::Relaxed);
+                        
+                        Self::change_priority(&e, i-1);
                         e.scheduled_timestamp
                             .swap(self.event_clock, Ordering::Relaxed);
                     });
@@ -197,25 +221,24 @@ impl EventRunner {
         }
     }
 
+    fn change_priority(event: &Event, priority: usize) {
+        event.priority.swap(priority, Ordering::Relaxed);
+    }
+
     fn next_event(&mut self) -> Option<Arc<Event>> {
         self.awake_next_sleeper();
 
-        let rewake = Self::try_pop(&self.rewake_queue);
-        if rewake.is_some() {
-            rewake
-        } else {
-            let mut event = None;
+        let mut event = None;
 
-            self.reprioritize();
+        self.reprioritize();
 
-            for i in 0..NUM_EVENT_PRIORITIES {
-                event = Self::try_pop(&self.event_queues[i]);
-                if event.is_some() {
-                    break;
-                }
+        for i in 0..NUM_EVENT_PRIORITIES {
+            event = Self::try_pop(&self.event_queues[i]);
+            if event.is_some() {
+                break;
             }
-
-            event
         }
+
+        event
     }
 }

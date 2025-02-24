@@ -51,8 +51,7 @@ struct Event {
 
 // Schedules and runs events within a single core
 struct EventRunner {
-    event_queues: [EventQueue; NUM_EVENT_PRIORITIES],
-    rewake_queue: Arc<EventQueue>,
+    event_queues: [Arc<EventQueue>; NUM_EVENT_PRIORITIES],
     pending_events: RwLock<BTreeSet<u64>>,
     sleeping_events: BinaryHeap<Sleep>,
     current_event: Option<Arc<Event>>,
@@ -101,6 +100,23 @@ pub fn schedule_process(
             runner.schedule(run_process_ring3(pid), NUM_EVENT_PRIORITIES - 1, pid);
         }
     });
+}
+
+pub fn schedule_blocked_process(
+    pid: u32, // 0 as kernel/sentinel
+) {
+    let cpuid = x2apic::current_core_id() as u32;
+
+    without_interrupts(|| {
+        let runners = EVENT_RUNNERS.read();
+        let mut runner = runners.get(&cpuid).expect("No runner found").write();
+
+        unsafe {
+            runner.schedule(run_process_ring3(pid), NUM_EVENT_PRIORITIES - 1, pid);
+        }
+    });
+
+    todo!();
 }
 
 pub fn register_event_runner() {
@@ -154,12 +170,30 @@ pub fn runner_timestamp() -> u64 {
 }
 
 pub fn nanosleep_current_event(nanos: u64) -> Option<Sleep> {
+    without_interrupts(|| {
+        let cpuid = x2apic::current_core_id() as u32;
+
+        let runners = EVENT_RUNNERS.read();
+        let mut runner = runners.get(&cpuid).expect("No runner found").write();
+    
+        runner.nanosleep_current_event(nanos)
+    })
+}
+
+pub fn nanosleep_current_process(
+    pid: u32, // 0 as kernel/sentinel
+    nanos: u64
+) {
     let cpuid = x2apic::current_core_id() as u32;
 
-    let runners = EVENT_RUNNERS.read();
-    let mut runner = runners.get(&cpuid).expect("No runner found").write();
+    without_interrupts(|| {
+        let runners = EVENT_RUNNERS.read();
+        let mut runner = runners.get(&cpuid).expect("No runner found").write();
 
-    runner.nanosleep_current_event(nanos)
+        unsafe {
+            runner.nanosleep_event(run_process_ring3(pid), NUM_EVENT_PRIORITIES - 1, pid, nanos);
+        }
+    });
 }
 
 #[derive(Debug)]

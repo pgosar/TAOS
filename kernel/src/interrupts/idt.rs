@@ -27,7 +27,7 @@ use crate::{
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
     memory::{paging::create_mapping, HHDM_OFFSET},
     prelude::*,
-    processes::process::try_preempt_process,
+    processes::process::preempt_process,
     syscalls::syscall_handlers::{sys_exit, sys_nanosleep},
 };
 
@@ -242,6 +242,7 @@ fn syscall_handler(rsp: u64) {
 
     x2apic::send_eoi();
 }
+
 #[naked]
 #[allow(undefined_naked_function_abi)]
 extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
@@ -293,7 +294,7 @@ extern "x86-interrupt" fn naked_timer_handler(_: InterruptStackFrame) {
 extern "C" fn timer_handler(rsp: u64) {
     inc_runner_clock();
 
-    try_preempt_process(rsp);
+    preempt_process(rsp);
     x2apic::send_eoi();
 }
 
