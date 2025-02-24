@@ -10,7 +10,7 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::{SYSCALL_32BIT_TEST, SYSCALL_64BIT_TEST, SYSCALL_BINARY, SYSCALL_PRINT, SYSCALL_THEN_LOOP},
+    constants::processes::SYSCALL_PRINT,
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},

@@ -11,7 +11,9 @@ use limine::request::{RequestsEndMarker, RequestsStartMarker};
 use taos::events::run_loop;
 
 extern crate alloc;
+#[allow(unused_imports)]
 use taos::{debug, serial_println};
+#[warn(unused_imports)]
 
 /// Marks the start of Limine boot protocol requests.
 #[used]

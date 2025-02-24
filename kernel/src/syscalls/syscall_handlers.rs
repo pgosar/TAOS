@@ -23,38 +23,6 @@ pub struct SyscallRegisters {
     pub arg6: u64,   // originally in r9
 }
 
-// #[no_mangle]
-// pub fn syscall_handler_64(syscall: *const SyscallRegisters) {
-//     let syscall = unsafe { &*syscall };
-//     serial_println!("Running syscall handler {}", syscall.number);
-//     serial_println!("GS: {}", KernelGsBase::read().as_u64());
-//     unsafe { 
-//         core::arch::asm!(
-//             "mov rsp, {0}",
-//             "sub rsp, 56",
-//             "mov [rsp + 0], {1}",
-//             "mov [rsp + 8], {2}",
-//             "mov [rsp + 16], {3}",
-//             "mov [rsp + 24], {4}",
-//             "mov [rsp + 32], {5}",
-//             "mov [rsp + 40], {6}",
-//             "mov [rsp + 48], {7}",
-//             "call syscall_handler_impl",
-//             "add rsp, 56",
-//             in(reg) (TSSS[0].privilege_stack_table[0] + RING0_STACK_SIZE as u64).as_u64(),
-//             in (reg) syscall.number,
-//             in (reg) syscall.arg1,
-//             in (reg) syscall.arg2,
-//             in (reg) syscall.arg3,
-//             in (reg) syscall.arg4,
-//             in (reg) syscall.arg5,
-//             in (reg) syscall.arg6,
-//         ) 
-//     }
-//             // "call syscall_handler_impl",
-//             // in(reg)             // kernel_stack = in (reg) (TSSS[0].privilege_stack_table[0] + RING0_STACK_SIZE as u64).as_u64()
-// }
-
 #[naked]
 #[no_mangle]
 pub extern "C" fn syscall_handler_64_naked() {
@@ -64,7 +32,7 @@ pub extern "C" fn syscall_handler_64_naked() {
             "cli", // disables interrupts, unsure if needed
             "mov r12, rcx",
             "mov r13, r11",
-            "mov rsp, 0xffffffff800c02f8",
+            "mov rsp, 0xffffffff800c02f8", // this is fine for now as it wont change
             "push rbx",
             "sub rsp, 56",
             // gets num and args
@@ -141,9 +109,7 @@ pub fn sys_exit(code: u64) {
 
 // Not a real system call, but useful for testing
 pub fn sys_print(buffer: *const u8) {
-    // let c_str = unsafe { CStr::from_ptr(buffer as *const i8) };
-    // let str_slice = c_str.to_str().expect("Invalid UTF-8 string");
-    // serial_println!("Buffer: {}", str_slice);
-    //
-    serial_println!("HI");
+    let c_str = unsafe { CStr::from_ptr(buffer as *const i8) };
+    let str_slice = c_str.to_str().expect("Invalid UTF-8 string");
+    serial_println!("Buffer: {}", str_slice);
 }
