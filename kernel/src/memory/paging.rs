@@ -15,7 +15,6 @@ use crate::{
         frame_allocator::{alloc_frame, dealloc_frame, FRAME_ALLOCATOR},
         tlb::tlb_shootdown,
     },
-    serial_println,
 };
 
 use super::HHDM_OFFSET;

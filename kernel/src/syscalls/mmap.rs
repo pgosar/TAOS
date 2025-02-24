@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use spin::Mutex;
 use x86_64::{
     structures::paging::{Page, PageTableFlags, Size4KiB},
     VirtAddr,
@@ -13,7 +14,7 @@ use crate::{
     serial_println,
 };
 
-static mut MMAP_ADDR: u64 = START_MMAP_ADDRESS;
+static MMAP_ADDR: Mutex<u64> = Mutex::new(START_MMAP_ADDRESS);
 
 #[derive(Clone, Debug)]
 pub struct MmapCall {
@@ -43,6 +44,12 @@ impl MmapCall {
 // See https://www.man7.org/linux/man-pages/man2/mmap.2.html
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MmapFlags(u64);
+
+impl Default for MmapFlags {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl MmapFlags {
     pub const MAP_SHARED: u64 = 1 << 0;
@@ -90,6 +97,12 @@ impl MmapFlags {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtFlags(u64);
+
+impl Default for ProtFlags {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ProtFlags {
     pub const PROT_EXEC: u64 = 1 << 0;
@@ -164,9 +177,8 @@ pub fn sys_mmap(
         panic!();
         // return something
     }
-    unsafe {
-        serial_println!("MMAP ADDR: {:#X}", { MMAP_ADDR });
-    }
+    serial_println!("MMAP ADDR: {:#X}", { *MMAP_ADDR.lock() });
+
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     let mut pid = event.pid;
@@ -177,7 +189,7 @@ pub fn sys_mmap(
         .get(&pid)
         .expect("Could not get pcb from process table");
     let pcb = process.pcb.get();
-    let mut begin_addr = unsafe { MMAP_ADDR };
+    let mut begin_addr = *MMAP_ADDR.lock();
     // We must return the original beginning address while adjusting the value of MMAP_ADDR
     // for the next calls to MMAP
     let addr_to_return = begin_addr;
@@ -195,10 +207,7 @@ pub fn sys_mmap(
     unsafe {
         (*pcb).mmaps.push(mmap_call);
     }
-
-    unsafe {
-        MMAP_ADDR = begin_addr;
-    }
+    *MMAP_ADDR.lock() = begin_addr;
     Some(VirtAddr::new(addr_to_return))
 }
 
@@ -256,7 +265,7 @@ mod tests {
 
     #[test_case]
     fn test_noprocess_basic_anon_mmap() {
-        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
+        let mmap_addr_before: u64 = *MMAP_ADDR.lock();
         let ret = sys_mmap(
             0x0,
             0x1000,
@@ -271,11 +280,12 @@ mod tests {
 
         // make sure it gave us correct virtual address
         // we should have added 0x1000 to MMAP_ADDR
-        unsafe { assert_eq!(MMAP_ADDR - 0x1000, mmap_addr_before) };
+        let addr = *MMAP_ADDR.lock();
+        assert_eq!(addr - 0x1000, mmap_addr_before);
 
         // The return value must be the original beginning address
         // This should be the current MMAP_ADDR - 0x1000
-        unsafe { assert_eq!({ MMAP_ADDR - 0x1000 }, ret.as_u64()) };
+        assert_eq!({ addr - 0x1000 }, ret.as_u64());
 
         // write to the address and make sure we can
         serial_println!("WRITING TO {:#X}", mmap_addr_before);
@@ -288,7 +298,7 @@ mod tests {
 
     #[test_case]
     fn test_noprocess_basic_anon_mmap_2() {
-        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
+        let mmap_addr_before: u64 = *MMAP_ADDR.lock();
         sys_mmap(
             0x0,
             0x1000,
@@ -299,12 +309,13 @@ mod tests {
         )
         .expect("Mmap failed");
 
+        let addr = *MMAP_ADDR.lock();
         // since there was one mmap before this, we should see that mmap_before is one 0x1000
         // above its initial declaration
-        unsafe { assert_eq!(MMAP_ADDR - PAGE_SIZE as u64, mmap_addr_before) };
+        assert_eq!(addr - PAGE_SIZE as u64, mmap_addr_before);
 
         // Reset mmap_before
-        let mmap_addr_before: u64 = unsafe { MMAP_ADDR };
+        let mmap_addr_before: u64 = addr;
         let ret = sys_mmap(
             0x0,
             0x2000,
@@ -316,14 +327,14 @@ mod tests {
         .expect("Mmap failed");
 
         create_process(SYSCALL_BINARY);
-
+        let addr = *MMAP_ADDR.lock();
         // make sure it gave us correct virtual address
         // we should have added 0x2000 to MMAP_ADDR
-        unsafe { assert_eq!(MMAP_ADDR - 0x2000, mmap_addr_before) };
+        assert_eq!(addr - 0x2000, mmap_addr_before);
 
         // The return value must be the original beginning address
         // This should be the current MMAP_ADDR - 0x2000
-        unsafe { assert_eq!({ MMAP_ADDR - 0x2000_u64 }, ret.as_u64()) };
+        assert_eq!({ addr - 0x2000_u64 }, ret.as_u64());
 
         // write to the address and make sure we can
         unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
