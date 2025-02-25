@@ -6,7 +6,7 @@ use crate::{
     interrupts::gdt,
     memory::{
         frame_allocator::{alloc_frame, with_generic_allocator},
-        HHDM_OFFSET, MAPPER,
+        HHDM_OFFSET, KERNEL_MAPPER,
     },
     processes::{loader::load_elf, registers::Registers},
     serial_println,
@@ -118,7 +118,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
         let ptr = virt.as_mut_ptr::<PageTable>();
         OffsetPageTable::new(&mut *ptr, *HHDM_OFFSET)
     };
-    let (stack_top, entry_point) = load_elf(elf_bytes, &mut mapper, &mut MAPPER.lock());
+    let (stack_top, entry_point) = load_elf(elf_bytes, &mut mapper, &mut KERNEL_MAPPER.lock());
 
     let process = Arc::new(UnsafePCB::init(PCB {
         pid,
@@ -166,7 +166,7 @@ unsafe fn create_process_page_table() -> PhysFrame<Size4KiB> {
     let ptr = virt.as_mut_ptr::<PageTable>();
 
     // Initialize and copy kernel mappings
-    let mapper = MAPPER.lock();
+    let mapper = KERNEL_MAPPER.lock();
     unsafe {
         (*ptr).zero();
         let kernel_pml4 = mapper.level_4_table();

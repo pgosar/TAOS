@@ -29,7 +29,7 @@ use crate::{
     memory::{
         frame_allocator::alloc_frame,
         paging::{create_mapping, update_mapping},
-        HHDM_OFFSET, MAPPER,
+        HHDM_OFFSET, KERNEL_MAPPER,
     },
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
@@ -167,8 +167,7 @@ extern "x86-interrupt" fn page_fault_handler(
     // check if lazy loaded address from mmap
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
-    let mut pid = event.pid;
-    pid = 1;
+    let pid = event.pid;
     let process_table = PROCESS_TABLE.write();
     let process = process_table
         .get(&pid)
@@ -180,12 +179,11 @@ extern "x86-interrupt" fn page_fault_handler(
         if entry.contains(faulting_address) {
             serial_println!("Entry start: {}", entry.start);
             let index = ((faulting_address - entry.start) / PAGE_SIZE as u64) as usize;
-            let mut mapper = MAPPER.lock();
             let frame = alloc_frame().expect("Could not allocate frame");
             entry.loaded[index] = true;
             update_mapping(
                 page,
-                &mut *mapper,
+                &mut mapper,
                 frame,
                 Some(
                     PageTableFlags::PRESENT
@@ -193,7 +191,8 @@ extern "x86-interrupt" fn page_fault_handler(
                         | PageTableFlags::USER_ACCESSIBLE,
                 ),
             );
-             if !entry.loaded[index] && entry.fd == -1 {
+
+            if !entry.loaded[index] && entry.fd == -1 {
                 break;
             } else if !entry.loaded[index] && entry.fd != -1 {
                 let _open_file = pcb.fd_table[entry.fd as usize];
@@ -203,6 +202,7 @@ extern "x86-interrupt" fn page_fault_handler(
                 // write content to physmem
             }
         }
+        break;
     }
 }
 
@@ -278,6 +278,7 @@ fn syscall_handler(rsp: u64) {
 
     if syscall_num == SYSCALL_EXIT {
         sys_exit(p1);
+        
     } else if syscall_num == SYSCALL_MMAP {
         let val = sys_mmap(p1, p2, p3, p4, p5 as i64, p6).expect("Mmap failed");
         unsafe { 

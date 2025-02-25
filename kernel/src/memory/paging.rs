@@ -103,6 +103,7 @@ pub fn update_mapping(
 ) {
     let mut flags = flags.unwrap_or(PageTableFlags::WRITABLE);
     flags.set(PageTableFlags::PRESENT, true);
+
     update_permissions(page, mapper, flags);
 
     let (old_frame, _) = mapper
@@ -287,7 +288,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{constants::memory::PAGE_SIZE, events::schedule_kernel, memory::MAPPER};
+    use crate::{constants::memory::PAGE_SIZE, events::schedule_kernel, memory::KERNEL_MAPPER};
     use alloc::vec::Vec;
     use x86_64::structures::paging::mapper::TranslateError;
 
@@ -308,7 +309,7 @@ mod tests {
     // Test basic remove, as removing and then translating should fail
     #[test_case]
     fn test_remove_mapped_frame() {
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
         let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
         let _ = create_mapping(page, &mut *mapper, None);
 
@@ -325,7 +326,7 @@ mod tests {
     // Test basic translation after map returns correct frame
     #[test_case]
     fn test_basic_map_and_translate() {
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
 
         // random test virtual page
         let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
@@ -341,7 +342,7 @@ mod tests {
     // Test that permissions are updated correctly
     #[test_case]
     fn test_update_permissions() {
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
 
         let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
         let _ = create_mapping(page, &mut *mapper, None);
@@ -361,7 +362,7 @@ mod tests {
     // Test that contiguous mappings work correctly. Allocates 8 pages in a row.
     #[test_case]
     fn test_contiguous_mapping() {
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
 
         // Define a contiguous region spanning 8 pages.
         let start_page: Page = Page::containing_address(VirtAddr::new(0x500000000));
@@ -404,7 +405,7 @@ mod tests {
         let page: Page = Page::containing_address(VirtAddr::new(0x500000000));
 
         {
-            let mut mapper = MAPPER.lock();
+            let mut mapper = KERNEL_MAPPER.lock();
             let _ = create_mapping(page, &mut *mapper, None);
             unsafe {
                 page.start_address()
@@ -423,7 +424,7 @@ mod tests {
         }
 
         {
-            let mut mapper = MAPPER.lock();
+            let mut mapper = KERNEL_MAPPER.lock();
             let new_frame = alloc_frame().expect("Could not find a new frame");
 
             // could say page already mapped, which would be really dumb
@@ -450,7 +451,7 @@ mod tests {
 
         assert_eq!(POST_READ.load(Ordering::SeqCst), 0x42);
 
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
         remove_mapped_frame(page, &mut *mapper);
     }
 }

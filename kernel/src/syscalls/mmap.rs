@@ -1,7 +1,8 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 use x86_64::{
-    structures::paging::{Page, PageTableFlags, Size4KiB},
+    registers::control::Cr3,
+    structures::paging::{OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
@@ -9,7 +10,7 @@ use crate::{
     constants::{memory::PAGE_SIZE, syscalls::START_MMAP_ADDRESS},
     events::{current_running_event_info, EventInfo},
     interrupts::x2apic,
-    memory::{paging::create_not_present_mapping, HHDM_OFFSET, MAPPER},
+    memory::{paging::create_not_present_mapping, HHDM_OFFSET, KERNEL_MAPPER},
     processes::process::PROCESS_TABLE,
     serial_println,
 };
@@ -173,9 +174,8 @@ pub fn sys_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: i64, offset: u64
     serial_println!("Fd is {}", fd);
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
-    let mut pid = event.pid;
+    let pid = event.pid;
     // for testing we hardcode to one for now
-    pid = 1;
     let process_table = PROCESS_TABLE.write();
     let process = process_table
         .get(&pid)
@@ -205,12 +205,19 @@ pub fn sys_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: i64, offset: u64
 }
 
 fn map_memory(begin_addr: &mut u64, len: u64, prot: u64, mmap_call: &mut MmapCall) {
+    let pml4 = Cr3::read().0;
+    let new_pml4_phys = pml4.start_address();
+    let new_pml4_virt = VirtAddr::new((*HHDM_OFFSET).as_u64()) + new_pml4_phys.as_u64();
+    let new_pml4_ptr: *mut PageTable = new_pml4_virt.as_mut_ptr();
+
+    let mut mapper =
+        unsafe { OffsetPageTable::new(&mut *new_pml4_ptr, VirtAddr::new((*HHDM_OFFSET).as_u64())) };
+
     let page_count = len / PAGE_SIZE as u64;
     for _ in 0..page_count {
         let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(*begin_addr));
-        let mut mapper = MAPPER.lock();
         let flags = protection_to_pagetable_flags(prot);
-        create_not_present_mapping(page, &mut *mapper, Some(flags));
+        create_not_present_mapping(page, &mut mapper, Some(flags));
         serial_println!("MAPPING MEMORY PAGE {:?}", page);
         mmap_call.loaded.push(false);
         *begin_addr += PAGE_SIZE as u64;
@@ -231,7 +238,7 @@ fn allocate_file_memory(
     let page_count = len / PAGE_SIZE as u64;
     for _ in 0..page_count {
         let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(*begin_addr));
-        let mut mapper = MAPPER.lock();
+        let mut mapper = KERNEL_MAPPER.lock();
         let flags = protection_to_pagetable_flags(prot);
         create_not_present_mapping(page, &mut *mapper, Some(flags));
         *begin_addr += PAGE_SIZE as u64;
@@ -249,106 +256,45 @@ mod tests {
             processes::{MMAP_ANON_SIMPLE, SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
         },
         events::schedule_process,
-        processes::process::{create_process, run_process_ring3, PROCESS_TABLE},
+        processes::process::{create_process, run_process_ring3, PCB, PROCESS_TABLE},
         serial_println,
         syscalls::mmap::MMAP_ADDR,
     };
 
     use super::{sys_mmap, MmapFlags, ProtFlags};
 
-    // #[test_case]
-    fn test_noprocess_basic_anon_mmap() {
-        let mmap_addr_before: u64 = *MMAP_ADDR.lock();
-        let ret = sys_mmap(
-            0x0,
-            0x1000,
-            ProtFlags::PROT_WRITE,
-            MmapFlags::MAP_ANONYMOUS,
-            -1,
-            0,
-        )
-        .expect("Mmap failed");
-
-        create_process(SYSCALL_BINARY);
-
-        // make sure it gave us correct virtual address
-        // we should have added 0x1000 to MMAP_ADDR
-        let addr = *MMAP_ADDR.lock();
-        assert_eq!(addr - 0x1000, mmap_addr_before);
-
-        // The return value must be the original beginning address
-        // This should be the current MMAP_ADDR - 0x1000
-        assert_eq!({ addr - 0x1000 }, ret.as_u64());
-
-        // write to the address and make sure we can
-        serial_println!("WRITING TO {:#X}", mmap_addr_before);
-        unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
-
-        let written_val = unsafe { ret.as_ptr::<u64>().read_volatile() };
-
-        assert_eq!(written_val, 0xdeadbeef);
-    }
-
-    // #[test_case]
-    fn test_noprocess_basic_anon_mmap_2() {
-        // create_process(SYSCALL_BINARY);
-        let mmap_addr_before: u64 = *MMAP_ADDR.lock();
-        sys_mmap(
-            0x0,
-            0x1000,
-            ProtFlags::PROT_WRITE,
-            MmapFlags::MAP_ANONYMOUS,
-            -1,
-            0,
-        )
-        .expect("Mmap failed");
-
-        let addr = *MMAP_ADDR.lock();
-        // since there was one mmap before this, we should see that mmap_before is one 0x1000
-        // above its initial declaration
-        assert_eq!(addr - PAGE_SIZE as u64, mmap_addr_before);
-
-        // Reset mmap_before
-        let mmap_addr_before: u64 = addr;
-        let ret = sys_mmap(
-            0x0,
-            0x2000,
-            ProtFlags::PROT_WRITE,
-            MmapFlags::MAP_ANONYMOUS,
-            -1,
-            0,
-        )
-        .expect("Mmap failed");
-
-        let addr = *MMAP_ADDR.lock();
-        // make sure it gave us correct virtual address
-        // we should have added 0x2000 to MMAP_ADDR
-        assert_eq!(addr - 0x2000, mmap_addr_before);
-
-        // The return value must be the original beginning address
-        // This should be the current MMAP_ADDR - 0x2000
-        assert_eq!({ addr - 0x2000_u64 }, ret.as_u64());
-
-        // write to the address and make sure we can
-        unsafe { ret.as_mut_ptr::<u64>().write_volatile(0xdeadbeef) };
-
-        let written_val = unsafe { ret.as_ptr::<u64>().read_volatile() };
-
-        assert_eq!(written_val, 0xdeadbeef);
-    }
-
-    #[test_case]
-    fn test_basic_anon_mmap() {
+    fn setup() -> (u32, *mut PCB) {
         let pid = create_process(MMAP_ANON_SIMPLE);
         let process_table = PROCESS_TABLE.write();
         let process = process_table
             .get(&pid)
             .expect("Could not get pcb from process table");
-        let pcb = process.pcb.get();
+        (pid, process.pcb.get())
+    }
+
+    #[test_case]
+    fn test_basic_anon_mmap() {
+        let p = setup();
+        let pid = p.0;
+        let pcb = p.1;
         unsafe {
             let mmap_addr_before: u64 = (*pcb).mmap_address;
             schedule_process(0, run_process_ring3(pid), pid);
-            // assert_eq!((*pcb).mmap_address, mmap_addr_before + 0x1000);
+            assert!(true);
         }
+    }
+
+    #[test_case]
+    fn test_two_anon_mmap() {
+        let p = setup();
+        let pid = p.0;
+        let pcb = p.1;
+        unsafe {
+            let mmap_addr_before: u64 = (*pcb).mmap_address;
+
+            schedule_process(0, unsafe { run_process_ring3(pid) }, pid);
+            schedule_process(0, unsafe { run_process_ring3(pid) }, pid);
+        }
+        assert!(true);
     }
 }

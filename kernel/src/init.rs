@@ -10,7 +10,9 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::{MMAP_ANON_SIMPLE, PRINT_EXIT, PRINT_PRINT_EXIT, SYSCALL_MMAP_MEMORY},
+    constants::processes::{
+        MMAP_ANON_SIMPLE, MMAP_ANON_SIMPLE_TEST, PRINT_EXIT, PRINT_PRINT_EXIT, SYSCALL_MMAP_MEMORY,
+    },
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},

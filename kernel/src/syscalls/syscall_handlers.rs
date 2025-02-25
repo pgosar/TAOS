@@ -59,7 +59,10 @@ pub fn sys_exit(code: u64) -> Option<u64> {
             in(reg) preemption_info.1
         );
     }
-    Some(0xdead)
+    if code == u64::MAX {
+        panic!("Bad error code!");
+    }
+    Some(code)
 }
 
 // Not a real system call, but useful for testing
