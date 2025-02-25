@@ -30,6 +30,9 @@ base_args = [
     # Graphics
     "-vga", "std",
 
+    # Debugging traces
+    "-trace", "usb*",
+
     # Boot media and UEFI settings
     "-cdrom", "{image}",
     "-drive", "if=pflash,unit=0,format=raw,file={ovmf}/ovmf-code-x86_64.fd,readonly=on",

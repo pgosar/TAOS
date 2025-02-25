@@ -112,6 +112,7 @@ bitflags! {
         const ReadToCard = 1 << 4;
         const BlockCountEnable = 1 << 1;
         const DMAEnable = 1;
+        const _ = !0;
     }
 }
 
