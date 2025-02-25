@@ -10,6 +10,7 @@ use x86_64::{
 use crate::memory::paging;
 
 /// An error occured when setting up a frame as uncacheable
+#[derive(Debug)]
 pub struct MMIOError;
 
 /// Maps the requested_phys_addr as an uncacheable page above hhdm offset
