@@ -20,12 +20,16 @@ pub struct SyscallRegisters {
     pub arg6: u64,
 }
 
-pub fn sys_exit(code: u64) -> Option<u64> {
+pub fn sys_exit(code: i64) -> Option<u64> {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
 
+    // This is for testing; this way, we can write binaries that conditionally fail tests
+    if code == -1 {
+        panic!("Unknown exit code, something went wrong")
+    }
 
     if event.pid == 0 {
         panic!("Calling exit from outside of process");

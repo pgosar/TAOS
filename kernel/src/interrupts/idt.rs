@@ -277,7 +277,7 @@ fn syscall_handler(rsp: u64) {
     // }
 
     if syscall_num == SYSCALL_EXIT {
-        sys_exit(p1);
+        sys_exit(p1 as i64);
         
     } else if syscall_num == SYSCALL_MMAP {
         let val = sys_mmap(p1, p2, p3, p4, p5 as i64, p6).expect("Mmap failed");
