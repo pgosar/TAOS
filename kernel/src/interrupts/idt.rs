@@ -6,6 +6,8 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
+use core::arch::naked_asm;
+
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
@@ -50,7 +52,7 @@ lazy_static! {
         }
         idt[TIMER_VECTOR].set_handler_fn(naked_timer_handler);
         idt[SYSCALL_HANDLER]
-            .set_handler_fn(syscall_handler)
+            .set_handler_fn(naked_syscall_handler)
             .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         idt[TLB_SHOOTDOWN_VECTOR].set_handler_fn(tlb_shootdown_handler);
         idt
@@ -205,43 +207,69 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 #[no_mangle]
-extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
-    let syscall_num: u32;
+#[naked]
+pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
+    unsafe {
+        naked_asm!(
+            // Push registers to save them
+            "push rax",
+            "push rbx",
+            "push rcx",
+            "push rdx",
+            "push rsi",
+            "push rdi",
+            "push rbp",
+            "mov	rdi, rsp",
+            // Call the syscall_handler
+            "call syscall_handler",
+            // Restore registers
+            "pop rbp",
+            "pop rdi",
+            "pop rsi",
+            "pop rdx",
+            "pop rcx",
+            "pop rbx",
+            "pop rax",
+            "iretq"
+        );
+    }
+}
+
+#[no_mangle]
+fn syscall_handler(rsp: u64) -> Option<u32> {
+    let syscall_num: u64;
     let p1: u64;
     let p2: u64;
     let p3: u64;
     let p4: u64;
     let p5: u64;
     let p6: u64;
+    let stack_ptr: *const u64 = rsp as *const u64;
     unsafe {
-        core::arch::asm!(
-            "mov {0:r}, rax",
-            "mov {1}, rbx",
-            "mov {2}, rcx",
-            "mov {3}, rdx",
-            "mov {4}, rsi",
-            "mov {5}, rdi",
-            "mov {6}, rbp",
-            out(reg) syscall_num,
-            out(reg) p1,
-            out(reg) p2,
-            out(reg) p3,
-            out(reg) p4,
-            out(reg) p5,
-            out(reg) p6,
-        );
+        syscall_num = *stack_ptr.add(6);
+        p1 = *stack_ptr.add(5);
+        p2 = *stack_ptr.add(4);
+        p3 = *stack_ptr.add(3);
+        p4 = *stack_ptr.add(2);
+        p5 = *stack_ptr.add(1);
+        p6 = *stack_ptr.add(0);
     }
 
-    serial_println!("Number is {} and arg1 is {}", syscall_num, p1);
+    // temporarily, just print the parameter registers
+    serial_println!("Parameter 1: {}", p1);
+    serial_println!("Parameter 2: {}", p2);
+    serial_println!("Parameter 3: {}", p3);
+    serial_println!("Parameter 4: {}", p4);
+    serial_println!("Parameter 5: {}", p5);
+    serial_println!("Parameter 6: {}", p6);
 
-    match syscall_num {
+    x2apic::send_eoi();
+
+    match syscall_num as u32 {
         SYSCALL_EXIT => sys_exit(p1),
-        SYSCALL_MMAP => sys_mmap(p1, p2, p3, p4, p5 as i64, p6),
         SYSCALL_PRINT => sys_print(p1 as *const u8),
         _ => panic!("Unknown syscall: {}", syscall_num),
-    };
-    x2apic::send_eoi();
-    x2apic::send_eoi();
+    }
 }
 
 #[naked]
