@@ -290,7 +290,11 @@ mod tests {
     use super::*;
     use crate::{constants::memory::PAGE_SIZE, events::schedule_kernel, memory::KERNEL_MAPPER};
     use alloc::vec::Vec;
-    use x86_64::structures::paging::mapper::TranslateError;
+    use bitflags::Flags;
+    use x86_64::structures::paging::{
+        mapper::{MappedFrame, TranslateError, TranslateResult},
+        Translate,
+    };
 
     // used for tlb shootdown testcases
     static PRE_READ: AtomicU64 = AtomicU64::new(0);
@@ -357,6 +361,37 @@ mod tests {
         assert!(!pte.flags().contains(PageTableFlags::WRITABLE));
 
         remove_mapped_frame(page, &mut *mapper);
+    }
+
+    #[test_case]
+    fn test_copy_on_write() {
+        let mut mapper = KERNEL_MAPPER.lock();
+
+        const TEST_VALUE: u64 = 0x42;
+
+        let page = Page::containing_address(VirtAddr::new(0x500000000));
+        let init_frame = create_mapping(
+            page,
+            &mut *mapper,
+            Some(PageTableFlags::PRESENT | PageTableFlags::BIT_9),
+        );
+
+        // should trigger a Copy on write page fault
+        unsafe {
+            page.start_address()
+                .as_mut_ptr::<u64>()
+                .write_volatile(TEST_VALUE);
+        }
+
+        let frame = mapper
+            .translate_page(page)
+            .expect("Translation after COW failed");
+
+        assert_ne!(init_frame, frame);
+
+        let read_value = unsafe { page.start_address().as_ptr::<u64>().read_volatile() };
+
+        assert_eq!(read_value, TEST_VALUE)
     }
 
     // Test that contiguous mappings work correctly. Allocates 8 pages in a row.
