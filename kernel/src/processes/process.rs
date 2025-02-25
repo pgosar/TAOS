@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use crate::{
-    constants::{syscalls::START_MMAP_ADDRESS, processes::MAX_FILES},
+    constants::{processes::MAX_FILES, syscalls::START_MMAP_ADDRESS},
     debug,
     interrupts::gdt,
     memory::{
@@ -26,7 +26,7 @@ use x86_64::{
 
 // process counter must be thread-safe
 // PID 0 will ONLY be used for errors/PID not found
-static NEXT_PID: AtomicU32 = AtomicU32::new(1);
+pub static NEXT_PID: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessState {
@@ -53,6 +53,7 @@ pub struct PCB {
 pub struct UnsafePCB {
     pub pcb: UnsafeCell<PCB>,
 }
+
 impl UnsafePCB {
     fn init(pcb: PCB) -> Self {
         UnsafePCB {

@@ -22,7 +22,7 @@ use crate::{
     constants::{
         idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
         memory::PAGE_SIZE,
-        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP, SYSCALL_PRINT},
+        syscalls::{SYSCALL_EXIT, SYSCALL_FORK, SYSCALL_MMAP, SYSCALL_PRINT},
     },
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
@@ -33,7 +33,11 @@ use crate::{
     },
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-    syscalls::{mmap::sys_mmap, syscall_handlers::{sys_exit, sys_print}},
+    syscalls::{
+        fork::sys_fork,
+        mmap::sys_mmap,
+        syscall_handlers::{sys_exit, sys_print},
+    },
 };
 
 lazy_static! {
@@ -278,10 +282,9 @@ fn syscall_handler(rsp: u64) {
 
     if syscall_num == SYSCALL_EXIT {
         sys_exit(p1 as i64);
-        
     } else if syscall_num == SYSCALL_MMAP {
         let val = sys_mmap(p1, p2, p3, p4, p5 as i64, p6).expect("Mmap failed");
-        unsafe { 
+        unsafe {
             core::arch::asm!(
                 "mov rax, {0}",
                 in (reg) val,
@@ -289,14 +292,21 @@ fn syscall_handler(rsp: u64) {
         }
     } else if syscall_num == SYSCALL_PRINT {
         let val = sys_print(p1 as *const u8).unwrap();
-        unsafe { 
+        unsafe {
+            core::arch::asm!(
+                "mov rax, {0}",
+                in (reg) val,
+            )
+        }
+    } else if syscall_num == SYSCALL_FORK {
+        let val = sys_fork();
+        unsafe {
             core::arch::asm!(
                 "mov rax, {0}",
                 in (reg) val,
             )
         }
     }
-
 }
 
 #[naked]
