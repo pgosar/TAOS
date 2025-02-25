@@ -1,3 +1,5 @@
+use core::ffi::CStr;
+
 use crate::{
     events::{current_running_event_info, EventInfo},
     processes::process::{clear_process_frames, ProcessState, PROCESS_TABLE},
@@ -6,24 +8,30 @@ use crate::{
 
 use crate::interrupts::x2apic;
 
-pub fn sys_exit<T>(p1: u64, p2: u64, p3: u64, p4: u64, p5: u64, p6: u64) -> Option<T> {
+#[repr(C)]
+#[derive(Debug)]
+pub struct SyscallRegisters {
+    pub number: u64, // syscall number (originally in rax)
+    pub arg1: u64,
+    pub arg2: u64,
+    pub arg3: u64,
+    pub arg4: u64,
+    pub arg5: u64,
+    pub arg6: u64,
+}
+
+pub fn sys_exit<T>(code: u64) -> Option<T> {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
 
-    serial_println!("CODE: {}", p1);
-    serial_println!("CODE: {}", p2);
-    serial_println!("CODE: {}", p3);
-    serial_println!("CODE: {}", p4);
-    serial_println!("CODE: {}", p5);
-    serial_println!("CODE: {}", p6);
 
     if event.pid == 0 {
         panic!("Calling exit from outside of process");
     }
 
-    serial_println!("Process {} exit", event.pid);
+    serial_println!("Process {} exitted with code {}", event.pid, code);
 
     // Get PCB from PID
     let preemption_info = unsafe {
@@ -51,5 +59,14 @@ pub fn sys_exit<T>(p1: u64, p2: u64, p3: u64, p4: u64, p5: u64, p6: u64) -> Opti
             in(reg) preemption_info.1
         );
     }
+    None
+}
+
+// Not a real system call, but useful for testing
+pub fn sys_print<T>(buffer: *const u8) -> Option<T> {
+    let c_str = unsafe { CStr::from_ptr(buffer as *const i8) };
+    let str_slice = c_str.to_str().expect("Invalid UTF-8 string");
+    serial_println!("Buffer: {}", str_slice);
+
     None
 }

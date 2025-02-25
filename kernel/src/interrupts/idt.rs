@@ -20,7 +20,7 @@ use crate::{
     constants::{
         idt::{SYSCALL_HANDLER, TIMER_VECTOR, TLB_SHOOTDOWN_VECTOR},
         memory::PAGE_SIZE,
-        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP},
+        syscalls::{SYSCALL_EXIT, SYSCALL_MMAP, SYSCALL_PRINT},
     },
     events::{current_running_event_info, schedule_process, EventInfo},
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
@@ -31,7 +31,7 @@ use crate::{
     },
     prelude::*,
     processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
-    syscalls::{mmap::sys_mmap, syscall_handlers::sys_exit},
+    syscalls::{mmap::sys_mmap, syscall_handlers::{sys_exit, sys_print}},
 };
 
 lazy_static! {
@@ -216,12 +216,12 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
     unsafe {
         core::arch::asm!(
             "mov {0:r}, rax",
-            "mov {1}, rdi",
-            "mov {2}, rsi",
+            "mov {1}, rbx",
+            "mov {2}, rcx",
             "mov {3}, rdx",
-            "mov {4}, r10",
-            "mov {5}, r9",
-            "mov {6}, r8",
+            "mov {4}, rsi",
+            "mov {5}, rdi",
+            "mov {6}, rbp",
             out(reg) syscall_num,
             out(reg) p1,
             out(reg) p2,
@@ -231,11 +231,16 @@ extern "x86-interrupt" fn syscall_handler(_: InterruptStackFrame) {
             out(reg) p6,
         );
     }
+
+    serial_println!("Number is {} and arg1 is {}", syscall_num, p1);
+
     match syscall_num {
-        SYSCALL_EXIT => sys_exit(p1, p2, p3, p4, p5, p6),
+        SYSCALL_EXIT => sys_exit(p1),
         SYSCALL_MMAP => sys_mmap(p1, p2, p3, p4, p5 as i64, p6),
+        SYSCALL_PRINT => sys_print(p1 as *const u8),
         _ => panic!("Unknown syscall: {}", syscall_num),
     };
+    x2apic::send_eoi();
     x2apic::send_eoi();
 }
 

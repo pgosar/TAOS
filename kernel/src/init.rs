@@ -10,7 +10,7 @@ use limine::{
 };
 
 use crate::{
-    constants::processes::SYSCALL_MMAP_MEMORY,
+    constants::processes::{PRINT_EXIT, SYSCALL_MMAP_MEMORY},
     debug, devices,
     events::{register_event_runner, run_loop, schedule_process},
     interrupts::{self, idt},
@@ -66,7 +66,7 @@ pub fn init() -> u32 {
     //     -1,
     //     0,
     // );
-    let pid = create_process(SYSCALL_MMAP_MEMORY);
+    let pid = create_process(PRINT_EXIT);
     unsafe { schedule_process(bsp_id, run_process_ring3(pid), pid) };
 
     let process_table = PROCESS_TABLE.read();
