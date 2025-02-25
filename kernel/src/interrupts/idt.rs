@@ -6,14 +6,15 @@
 //! - Timer interrupt handling
 //! - Functions to enable/disable interrupts
 
-use core::arch::naked_asm;
+use core::{arch::naked_asm, ptr};
 
+use alloc::boxed::Box;
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::{
         idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
-        paging::{OffsetPageTable, Page, PageTable, PageTableFlags},
+        paging::{Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB},
     },
     VirtAddr,
 };
@@ -28,7 +29,7 @@ use crate::{
     interrupts::x2apic::{self, current_core_id, TLB_SHOOTDOWN_ADDR},
     memory::{
         frame_allocator::alloc_frame,
-        paging::{create_mapping, update_mapping},
+        paging::{create_mapping, get_page_flags, update_mapping},
         HHDM_OFFSET, KERNEL_MAPPER,
     },
     prelude::*,
@@ -150,7 +151,6 @@ extern "x86-interrupt" fn page_fault_handler(
 
     let mut mapper =
         unsafe { OffsetPageTable::new(&mut *new_pml4_ptr, VirtAddr::new((*HHDM_OFFSET).as_u64())) };
-
     let stack_pointer = stack_frame.stack_pointer.as_u64();
 
     serial_println!(
@@ -161,6 +161,36 @@ extern "x86-interrupt" fn page_fault_handler(
     );
 
     let page = Page::containing_address(VirtAddr::new(faulting_address));
+    let mut flags: PageTableFlags =
+        get_page_flags(page, &mut mapper).expect("Could not get page flags");
+
+    let cow = flags.contains(PageTableFlags::BIT_9);
+    let present = flags.contains(PageTableFlags::PRESENT);
+    let read_only = !flags.contains(PageTableFlags::WRITABLE);
+
+    let caused_by_write = (error_code.bits() & PageFaultErrorCode::CAUSED_BY_WRITE.bits()) != 0;
+
+    // If error code was caused by write and permissions of PTE are for COW
+    if cow && caused_by_write && read_only && present {
+        // before we update mapping, we save data
+        let start = page.start_address();
+        let src_ptr = start.as_mut_ptr();
+
+        let mut buffer: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
+
+        unsafe {
+            ptr::copy_nonoverlapping(src_ptr, buffer.as_mut_ptr(), PAGE_SIZE);
+        }
+
+        flags.set(PageTableFlags::BIT_9, false);
+        flags.set(PageTableFlags::WRITABLE, true);
+
+        let frame = alloc_frame().expect("Allocation failed");
+        update_mapping(page, &mut mapper, frame, Some(flags));
+        unsafe {
+            ptr::copy_nonoverlapping(buffer.as_mut_ptr(), src_ptr, PAGE_SIZE);
+        }
+    }
 
     // check for stack growth
     if stack_pointer - 64 <= faulting_address && faulting_address < (*HHDM_OFFSET).as_u64() {
@@ -171,7 +201,14 @@ extern "x86-interrupt" fn page_fault_handler(
     // check if lazy loaded address from mmap
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
-    let pid = event.pid;
+    let pid = {
+        let process_table = PROCESS_TABLE.read();
+        if process_table.contains_key(&event.pid) {
+            event.pid
+        } else {
+            0
+        }
+    };
     let process_table = PROCESS_TABLE.write();
     let process = process_table
         .get(&pid)

@@ -4,7 +4,9 @@
 
 use x86_64::{
     structures::paging::{
-        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+        mapper::{MappedFrame, TranslateResult},
+        page_table::PageTableEntry,
+        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB, Translate,
     },
     VirtAddr,
 };
@@ -20,6 +22,12 @@ use crate::{
 use super::HHDM_OFFSET;
 
 static mut NEXT_EPH_OFFSET: u64 = 0;
+
+#[derive(Debug)]
+/// Represents errors that can occur during SD card operation or initalization
+pub enum PagingError {
+    PageNotMappedErr,
+}
 
 /// initializes vmem system. activates pml4 and sets up page tables
 ///
@@ -156,6 +164,24 @@ pub fn remove_mapped_frame(page: Page, mapper: &mut impl Mapper<Size4KiB>) {
     tlb_shootdown(page.start_address());
 }
 
+pub fn get_page_flags(
+    page: Page,
+    mapper: &mut OffsetPageTable,
+) -> Result<PageTableFlags, PagingError> {
+    let translate_result = mapper.translate(page.start_address());
+    match translate_result {
+        TranslateResult::Mapped {
+            frame,
+            offset: _,
+            flags,
+        } => match frame {
+            MappedFrame::Size4KiB(_) => return Result::Ok(flags),
+            _ => Result::Err(PagingError::PageNotMappedErr),
+        },
+        _ => Result::Err(PagingError::PageNotMappedErr),
+    }
+}
+
 /// Mappes a frame to kernel pages
 /// Used for loading
 ///
@@ -288,7 +314,12 @@ mod tests {
     };
 
     use super::*;
-    use crate::{constants::memory::PAGE_SIZE, events::schedule_kernel, memory::KERNEL_MAPPER};
+    use crate::{
+        constants::{memory::PAGE_SIZE, processes::SYSCALL_MMAP_MEMORY},
+        events::schedule_kernel,
+        memory::KERNEL_MAPPER,
+        processes::process::create_process,
+    };
     use alloc::vec::Vec;
     use bitflags::Flags;
     use x86_64::structures::paging::{
@@ -365,6 +396,7 @@ mod tests {
 
     #[test_case]
     fn test_copy_on_write() {
+        create_process(SYSCALL_MMAP_MEMORY);
         let mut mapper = KERNEL_MAPPER.lock();
 
         const TEST_VALUE: u64 = 0x42;

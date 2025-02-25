@@ -63,10 +63,10 @@ pub fn sys_exit(code: i64) -> Option<u64> {
             in(reg) preemption_info.1
         );
     }
-    if code == u64::MAX {
+    if code == -1 {
         panic!("Bad error code!");
     }
-    Some(code)
+    Some(code as u64)
 }
 
 // Not a real system call, but useful for testing

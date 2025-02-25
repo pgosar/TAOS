@@ -253,7 +253,7 @@ mod tests {
     use crate::{
         constants::{
             memory::PAGE_SIZE,
-            processes::{MMAP_ANON_SIMPLE, SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
+            processes::{MMAP_ANON_SIMPLE, SYSCALL_MMAP_MEMORY},
         },
         events::schedule_process,
         processes::process::{create_process, run_process_ring3, PCB, PROCESS_TABLE},

@@ -3,10 +3,11 @@ use core::sync::atomic::Ordering;
 use x86_64::structures::paging::PageTable;
 
 use crate::{
-    events::{current_running_event_info},
+    events::current_running_event_info,
     interrupts::x2apic,
     memory::{frame_allocator::alloc_frame, HHDM_OFFSET},
-    processes::process::{NEXT_PID, PROCESS_TABLE}, serial_println,
+    processes::process::{NEXT_PID, PROCESS_TABLE},
+    serial_println,
 };
 
 pub fn sys_fork() -> u64 {
