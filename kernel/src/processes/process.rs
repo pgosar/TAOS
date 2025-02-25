@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use crate::{
-    constants::processes::MAX_FILES,
+    constants::{syscalls::START_MMAP_ADDRESS, processes::MAX_FILES},
     debug,
     interrupts::gdt,
     memory::{
@@ -46,6 +46,7 @@ pub struct PCB {
     pub registers: Registers,
     pub pml4_frame: PhysFrame<Size4KiB>, // this process' page table
     pub mmaps: Vec<MmapCall>,
+    pub mmap_address: u64,
     pub fd_table: [u64; MAX_FILES],
 }
 
@@ -146,6 +147,7 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
         },
         pml4_frame: process_pml4_frame,
         mmaps: Vec::new(),
+        mmap_address: START_MMAP_ADDRESS,
         fd_table: [0; MAX_FILES],
     }));
     let pid = unsafe { (*process.pcb.get()).pid };

@@ -20,7 +20,7 @@ pub struct SyscallRegisters {
     pub arg6: u64,
 }
 
-pub fn sys_exit(code: u64) -> Option<u32> {
+pub fn sys_exit(code: u64) -> Option<u64> {
     // TODO handle hierarchy (parent processes), resources, threads, etc.
     // TODO recursive page table walk to handle cleaning up process memory
     let cpuid: u32 = x2apic::current_core_id() as u32;
@@ -59,11 +59,11 @@ pub fn sys_exit(code: u64) -> Option<u32> {
             in(reg) preemption_info.1
         );
     }
-    Some(1)
+    Some(0xdead)
 }
 
 // Not a real system call, but useful for testing
-pub fn sys_print(buffer: *const u8) -> Option<u32> {
+pub fn sys_print(buffer: *const u8) -> Option<u64> {
     let c_str = unsafe { CStr::from_ptr(buffer as *const i8) };
     let str_slice = c_str.to_str().expect("Invalid UTF-8 string");
     serial_println!("Buffer: {}", str_slice);

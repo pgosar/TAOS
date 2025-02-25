@@ -103,7 +103,8 @@ pub fn update_mapping(
 ) {
     let mut flags = flags.unwrap_or(PageTableFlags::WRITABLE);
     flags.set(PageTableFlags::PRESENT, true);
-    // update_permissions(page, mapper, flags);
+    update_permissions(page, mapper, flags);
+
     let (old_frame, _) = mapper
         .unmap(page)
         .expect("Unmap failed, frame likely was not mapped already");

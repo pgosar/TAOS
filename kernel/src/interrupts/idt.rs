@@ -193,7 +193,7 @@ extern "x86-interrupt" fn page_fault_handler(
                         | PageTableFlags::USER_ACCESSIBLE,
                 ),
             );
-            if !entry.loaded[index] && entry.fd == -1 {
+             if !entry.loaded[index] && entry.fd == -1 {
                 break;
             } else if !entry.loaded[index] && entry.fd != -1 {
                 let _open_file = pcb.fd_table[entry.fd as usize];
@@ -212,6 +212,7 @@ pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
     unsafe {
         naked_asm!(
             // Push registers to save them
+            "push r11",
             "push rax",
             "push rbx",
             "push rcx",
@@ -219,10 +220,11 @@ pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
             "push rsi",
             "push rdi",
             "push rbp",
-            "mov	rdi, rsp",
+            "mov rdi, rsp",
             // Call the syscall_handler
             "call syscall_handler",
             // Restore registers
+            "mov r11, rax",
             "pop rbp",
             "pop rdi",
             "pop rsi",
@@ -230,14 +232,16 @@ pub extern "x86-interrupt" fn naked_syscall_handler(_: InterruptStackFrame) {
             "pop rcx",
             "pop rbx",
             "pop rax",
+            "mov rax, r11",
+            "pop r11",
             "iretq"
         );
     }
 }
 
 #[no_mangle]
-fn syscall_handler(rsp: u64) -> Option<u32> {
-    let syscall_num: u64;
+fn syscall_handler(rsp: u64) {
+    let syscall_num: u32;
     let p1: u64;
     let p2: u64;
     let p3: u64;
@@ -246,7 +250,7 @@ fn syscall_handler(rsp: u64) -> Option<u32> {
     let p6: u64;
     let stack_ptr: *const u64 = rsp as *const u64;
     unsafe {
-        syscall_num = *stack_ptr.add(6);
+        syscall_num = *stack_ptr.add(6) as u32;
         p1 = *stack_ptr.add(5);
         p2 = *stack_ptr.add(4);
         p3 = *stack_ptr.add(3);
@@ -260,16 +264,38 @@ fn syscall_handler(rsp: u64) -> Option<u32> {
     serial_println!("Parameter 2: {}", p2);
     serial_println!("Parameter 3: {}", p3);
     serial_println!("Parameter 4: {}", p4);
-    serial_println!("Parameter 5: {}", p5);
+    serial_println!("Parameter 5: {}", p5 as i64);
     serial_println!("Parameter 6: {}", p6);
 
     x2apic::send_eoi();
 
-    match syscall_num as u32 {
-        SYSCALL_EXIT => sys_exit(p1),
-        SYSCALL_PRINT => sys_print(p1 as *const u8),
-        _ => panic!("Unknown syscall: {}", syscall_num),
+    // match syscall_num as u32 {
+    //     SYSCALL_EXIT => sys_exit(p1),
+    //     SYSCALL_PRINT => sys_print(p1 as *const u8),
+    //     SYSCALL_MMAP => sys_mmap(p1, p2, p3, p4, p5 as i64, p6),
+    //     _ => panic!("Unknown syscall: {}", syscall_num),
+    // }
+
+    if syscall_num == SYSCALL_EXIT {
+        sys_exit(p1);
+    } else if syscall_num == SYSCALL_MMAP {
+        let val = sys_mmap(p1, p2, p3, p4, p5 as i64, p6).expect("Mmap failed");
+        unsafe { 
+            core::arch::asm!(
+                "mov rax, {0}",
+                in (reg) val,
+            )
+        }
+    } else if syscall_num == SYSCALL_PRINT {
+        let val = sys_print(p1 as *const u8).unwrap();
+        unsafe { 
+            core::arch::asm!(
+                "mov rax, {0}",
+                in (reg) val,
+            )
+        }
     }
+
 }
 
 #[naked]

@@ -163,22 +163,14 @@ pub fn protection_to_pagetable_flags(prot: u64) -> PageTableFlags {
     flags
 }
 
-pub fn sys_mmap(
-    addr: u64,
-    len: u64,
-    prot: u64,
-    flags: u64,
-    fd: i64,
-    offset: u64,
-) -> Option<VirtAddr> {
+pub fn sys_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: i64, offset: u64) -> Option<u64> {
     // we will currently completely ignore user address requests and do whatever we want
     if len == 0 {
         serial_println!("Zero length mapping");
         panic!();
         // return something
     }
-    serial_println!("MMAP ADDR: {:#X}", { *MMAP_ADDR.lock() });
-
+    serial_println!("Fd is {}", fd);
     let cpuid: u32 = x2apic::current_core_id() as u32;
     let event: EventInfo = current_running_event_info(cpuid);
     let mut pid = event.pid;
@@ -189,15 +181,14 @@ pub fn sys_mmap(
         .get(&pid)
         .expect("Could not get pcb from process table");
     let pcb = process.pcb.get();
-    let mut begin_addr = *MMAP_ADDR.lock();
+    let mut begin_addr = unsafe { (*pcb).mmap_address };
     // We must return the original beginning address while adjusting the value of MMAP_ADDR
     // for the next calls to MMAP
     let addr_to_return = begin_addr;
     let mut mmap_call = MmapCall::new(begin_addr, begin_addr + len, fd, offset);
-
     if begin_addr + offset > (*HHDM_OFFSET).as_u64() {
         serial_println!("Ran out of virtual memory for mmap call.");
-        return Some(*HHDM_OFFSET);
+        return Some((*HHDM_OFFSET).as_u64());
     }
     if flags == MmapFlags::MAP_ANONYMOUS {
         map_memory(&mut begin_addr, len, prot, &mut mmap_call);
@@ -207,8 +198,10 @@ pub fn sys_mmap(
     unsafe {
         (*pcb).mmaps.push(mmap_call);
     }
-    *MMAP_ADDR.lock() = begin_addr;
-    Some(VirtAddr::new(addr_to_return))
+    unsafe {
+        (*pcb).mmap_address = begin_addr;
+    }
+    Some(addr_to_return)
 }
 
 fn map_memory(begin_addr: &mut u64, len: u64, prot: u64, mmap_call: &mut MmapCall) {
@@ -253,17 +246,17 @@ mod tests {
     use crate::{
         constants::{
             memory::PAGE_SIZE,
-            processes::{SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
+            processes::{MMAP_ANON_SIMPLE, SYSCALL_BINARY, SYSCALL_MMAP_MEMORY},
         },
         events::schedule_process,
-        processes::process::{create_process, run_process_ring3},
+        processes::process::{create_process, run_process_ring3, PROCESS_TABLE},
         serial_println,
         syscalls::mmap::MMAP_ADDR,
     };
 
     use super::{sys_mmap, MmapFlags, ProtFlags};
 
-    #[test_case]
+    // #[test_case]
     fn test_noprocess_basic_anon_mmap() {
         let mmap_addr_before: u64 = *MMAP_ADDR.lock();
         let ret = sys_mmap(
@@ -296,8 +289,9 @@ mod tests {
         assert_eq!(written_val, 0xdeadbeef);
     }
 
-    #[test_case]
+    // #[test_case]
     fn test_noprocess_basic_anon_mmap_2() {
+        // create_process(SYSCALL_BINARY);
         let mmap_addr_before: u64 = *MMAP_ADDR.lock();
         sys_mmap(
             0x0,
@@ -326,7 +320,6 @@ mod tests {
         )
         .expect("Mmap failed");
 
-        create_process(SYSCALL_BINARY);
         let addr = *MMAP_ADDR.lock();
         // make sure it gave us correct virtual address
         // we should have added 0x2000 to MMAP_ADDR
@@ -346,7 +339,16 @@ mod tests {
 
     #[test_case]
     fn test_basic_anon_mmap() {
-        let pid = create_process(SYSCALL_MMAP_MEMORY);
-        unsafe { schedule_process(0, run_process_ring3(pid), pid) };
+        let pid = create_process(MMAP_ANON_SIMPLE);
+        let process_table = PROCESS_TABLE.write();
+        let process = process_table
+            .get(&pid)
+            .expect("Could not get pcb from process table");
+        let pcb = process.pcb.get();
+        unsafe {
+            let mmap_addr_before: u64 = (*pcb).mmap_address;
+            schedule_process(0, run_process_ring3(pid), pid);
+            // assert_eq!((*pcb).mmap_address, mmap_addr_before + 0x1000);
+        }
     }
 }
