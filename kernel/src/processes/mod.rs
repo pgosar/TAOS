@@ -1,11 +1,22 @@
+use process::create_placeholder_process;
+
 pub mod loader;
 pub mod process;
 pub mod registers;
 
+pub fn init(cpu_id: u32) {
+    if cpu_id == 0 {
+        create_placeholder_process();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        constants::processes::RAND_REGS_EXIT, events::schedule_process, interrupts::x2apic, processes::process::{create_process, run_process_ring3}
+        constants::processes::RAND_REGS_EXIT,
+        events::schedule_process,
+        interrupts::x2apic,
+        processes::process::{create_process, run_process_ring3},
     };
 
     #[test_case]

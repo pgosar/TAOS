@@ -3,7 +3,8 @@ extern crate alloc;
 use crate::{
     constants::{processes::MAX_FILES, syscalls::START_MMAP_ADDRESS},
     debug,
-    interrupts::gdt,
+    events::{current_running_event_info, EventInfo},
+    interrupts::{gdt, x2apic},
     memory::{
         frame_allocator::{alloc_frame, with_generic_allocator},
         HHDM_OFFSET, KERNEL_MAPPER,
@@ -82,6 +83,17 @@ impl PCB {
     }
 }
 
+pub fn get_current_pid() -> u32 {
+    let cpuid: u32 = x2apic::current_core_id() as u32;
+    let event: EventInfo = current_running_event_info(cpuid);
+    let process_table = PROCESS_TABLE.read();
+    if process_table.contains_key(&event.pid) {
+        event.pid
+    } else {
+        0
+    }
+}
+
 /// # Safety
 ///
 /// TODO
@@ -107,6 +119,44 @@ pub unsafe fn print_process_table(process_table: &PROCESS_TABLE) {
         );
     }
     serial_println!("========================");
+}
+
+pub fn create_placeholder_process() -> u32 {
+    // Build a new process address space
+    let pid = 0;
+    let process_pml4_frame = unsafe { create_process_page_table() };
+    let process = Arc::new(UnsafePCB::init(PCB {
+        pid,
+        state: ProcessState::New,
+        kernel_rsp: 0,
+        kernel_rip: 0,
+        registers: Registers {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rbp: 0,
+            rsp: 0,
+            rip: 0,
+            rflags: 0x0,
+        },
+        pml4_frame: process_pml4_frame,
+        mmaps: Vec::new(),
+        mmap_address: START_MMAP_ADDRESS,
+        fd_table: [0; MAX_FILES],
+    }));
+    PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
+    pid
 }
 
 pub fn create_process(elf_bytes: &[u8]) -> u32 {
@@ -151,7 +201,6 @@ pub fn create_process(elf_bytes: &[u8]) -> u32 {
         mmap_address: START_MMAP_ADDRESS,
         fd_table: [0; MAX_FILES],
     }));
-    let pid = unsafe { (*process.pcb.get()).pid };
     PROCESS_TABLE.write().insert(pid, Arc::clone(&process));
     debug!("Created process with PID: {}", pid);
     // schedule process (call from main)

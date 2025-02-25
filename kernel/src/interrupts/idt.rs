@@ -8,13 +8,12 @@
 
 use core::{arch::naked_asm, ptr};
 
-use alloc::boxed::Box;
 use lazy_static::lazy_static;
 use x86_64::{
     instructions::interrupts,
     structures::{
         idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
-        paging::{Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB},
+        paging::{OffsetPageTable, Page, PageTable, PageTableFlags},
     },
     VirtAddr,
 };
@@ -30,10 +29,10 @@ use crate::{
     memory::{
         frame_allocator::alloc_frame,
         paging::{create_mapping, get_page_flags, update_mapping},
-        HHDM_OFFSET, KERNEL_MAPPER,
+        HHDM_OFFSET,
     },
     prelude::*,
-    processes::process::{run_process_ring3, ProcessState, PROCESS_TABLE},
+    processes::process::{get_current_pid, run_process_ring3, ProcessState, PROCESS_TABLE},
     syscalls::{
         fork::sys_fork,
         mmap::sys_mmap,
@@ -199,16 +198,7 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 
     // check if lazy loaded address from mmap
-    let cpuid: u32 = x2apic::current_core_id() as u32;
-    let event: EventInfo = current_running_event_info(cpuid);
-    let pid = {
-        let process_table = PROCESS_TABLE.read();
-        if process_table.contains_key(&event.pid) {
-            event.pid
-        } else {
-            0
-        }
-    };
+    let pid = get_current_pid();
     let process_table = PROCESS_TABLE.write();
     let process = process_table
         .get(&pid)

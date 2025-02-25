@@ -16,7 +16,10 @@ use crate::{
     interrupts::{self, idt},
     logging,
     memory::{self},
-    processes::process::{create_process, run_process_ring3, PROCESS_TABLE},
+    processes::{
+        self,
+        process::{create_process, run_process_ring3, PROCESS_TABLE},
+    },
     serial_println, trace,
 };
 
@@ -52,6 +55,7 @@ pub fn init() -> u32 {
     // Should be kept after devices in case logging gets complicated
     // Right now log writes to serial, but if it were to switch to VGA, this would be important
     logging::init(0);
+    processes::init(0);
 
     debug!("Waking cores");
     let bsp_id = wake_cores();
@@ -96,6 +100,7 @@ unsafe extern "C" fn secondary_cpu_main(cpu: &Cpu) -> ! {
     interrupts::init(cpu.id);
     memory::init(cpu.id);
     logging::init(cpu.id);
+    processes::init(cpu.id);
 
     debug!("AP {} initialized", cpu.id);
 

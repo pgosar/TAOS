@@ -396,7 +396,6 @@ mod tests {
 
     #[test_case]
     fn test_copy_on_write() {
-        create_process(SYSCALL_MMAP_MEMORY);
         let mut mapper = KERNEL_MAPPER.lock();
 
         const TEST_VALUE: u64 = 0x42;
